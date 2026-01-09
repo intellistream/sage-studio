@@ -68,15 +68,40 @@ Studio 采用**前后端分离**架构，直接接入 SAGE 核心引擎：
 - **Node.js**: 18+ (推荐 LTS)
 - **SAGE**: 完整安装 (包括 kernel, middleware, libs)
 
-### 安装 SAGE Studio
+### 快速安装（推荐）
+
+使用 `quickstart.sh` 一键安装所有依赖：
 
 ```bash
-# 方式 1: 通过 SAGE 元包安装（推荐）
+# 克隆仓库
+git clone https://github.com/intellistream/sage-studio.git
+cd sage-studio
+
+# 运行快速安装脚本
+./quickstart.sh
+```
+
+**脚本功能：**
+- ✅ 检查 Python/Node.js 环境
+- ✅ 创建/激活虚拟环境
+- ✅ 安装 Python 依赖（开发模式）
+- ✅ 安装前端依赖（npm）
+- ✅ 验证 SAGE 核心依赖
+- ✅ 显示下一步操作指南
+
+### 手动安装
+
+```bash
+# 方式 1: 通过 SAGE 元包安装（推荐生产环境）
 pip install isage  # 自动包含 isage-studio
 
 # 方式 2: 开发模式安装
-cd packages/sage-studio
-pip install -e .
+cd sage-studio
+pip install -e ".[dev]"
+
+# 安装前端依赖
+cd src/sage/studio/frontend
+npm install
 
 # 验证安装
 python -c "from sage.studio.studio_manager import StudioManager; print('✓ Studio installed')"
