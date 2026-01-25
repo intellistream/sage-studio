@@ -413,14 +413,11 @@ class StudioManager:
         console.print(f"   端口: {port}")
 
         try:
-            # 构建启动命令
-            cmd = ["sage-llm", "serve", "--host", "0.0.0.0", "--port", str(port)]
+            # 构建启动命令 - 使用 sagellm-gateway
+            cmd = ["python", "-m", "sagellm_gateway.server", "--host", "0.0.0.0", "--port", str(port)]
 
             if mock:
                 cmd.append("--mock")
-
-            if model:
-                cmd.extend(["--model", model])
 
             # 后台启动
             log_file = Path("/tmp/sage-studio-llm.log")
@@ -1343,7 +1340,7 @@ if __name__ == "__main__":
                 if not self.start_llm_service():
                     console.print("[yellow]⚠️  LLM 服务启动失败，Chat 模式可能无法使用[/yellow]")
                     console.print(
-                        "[yellow]   您可以稍后手动启动: sage-llm serve --mock --port 8001[/yellow]"
+                        "[yellow]   您可以稍后手动启动: python -m sagellm_gateway.server --mock --port 8001[/yellow]"
                     )
             else:
                 if llm_pid == -1:

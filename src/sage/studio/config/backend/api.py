@@ -2403,7 +2403,7 @@ async def create_finetune_task(request: FinetuneCreateRequest):
     """创建微调任务（带 OOM 风险检测）"""
     import torch
 
-    from isage_finetune import finetune_manager
+    from sage_libs.sage_finetune import finetune_manager
 
     # GPU 显存检测
     warnings = []
@@ -2467,7 +2467,7 @@ async def create_finetune_task(request: FinetuneCreateRequest):
 @app.get("/api/finetune/tasks")
 async def list_finetune_tasks():
     """列出所有微调任务"""
-    from isage_finetune import finetune_manager
+    from sage_libs.sage_finetune import finetune_manager
 
     tasks = finetune_manager.list_tasks()
     return [task.to_dict() for task in tasks]
@@ -2476,7 +2476,7 @@ async def list_finetune_tasks():
 @app.get("/api/finetune/tasks/{task_id}")
 async def get_finetune_task(task_id: str):
     """获取微调任务详情"""
-    from isage_finetune import finetune_manager
+    from sage_libs.sage_finetune import finetune_manager
 
     task = finetune_manager.get_task(task_id)
     if not task:
@@ -2487,7 +2487,7 @@ async def get_finetune_task(task_id: str):
 @app.get("/api/finetune/models")
 async def list_finetune_models():
     """获取可用模型列表（基础模型 + 微调后的模型）"""
-    from isage_finetune import finetune_manager
+    from sage_libs.sage_finetune import finetune_manager
 
     return finetune_manager.list_available_models()
 
@@ -2514,7 +2514,7 @@ async def switch_model(model_path: str):
 @app.get("/api/finetune/current-model")
 async def get_current_model():
     """获取当前使用的模型"""
-    from isage_finetune import finetune_manager
+    from sage_libs.sage_finetune import finetune_manager
 
     return {"current_model": finetune_manager.get_current_model()}
 
@@ -2551,7 +2551,7 @@ async def download_finetuned_model(task_id: str):
 
     from fastapi.responses import FileResponse
 
-    from isage_finetune import finetune_manager
+    from sage_libs.sage_finetune import finetune_manager
 
     task = finetune_manager.get_task(task_id)
     if not task:
@@ -2589,7 +2589,7 @@ async def download_finetuned_model(task_id: str):
 @app.delete("/api/finetune/tasks/{task_id}")
 async def delete_finetune_task(task_id: str):
     """删除微调任务（仅允许删除已完成、失败或取消的任务）"""
-    from isage_finetune import FinetuneStatus, finetune_manager
+    from sage_libs.sage_finetune import FinetuneStatus, finetune_manager
 
     if finetune_manager.delete_task(task_id):
         return {"status": "success", "message": f"任务 {task_id} 已删除"}
@@ -2615,7 +2615,7 @@ async def delete_finetune_task(task_id: str):
 @app.post("/api/finetune/tasks/{task_id}/cancel")
 async def cancel_finetune_task(task_id: str):
     """取消运行中的微调任务"""
-    from isage_finetune import FinetuneStatus, finetune_manager
+    from sage_libs.sage_finetune import FinetuneStatus, finetune_manager
 
     task = finetune_manager.tasks.get(task_id)
     if not task:
