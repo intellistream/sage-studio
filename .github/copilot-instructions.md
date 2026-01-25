@@ -99,13 +99,21 @@ pip install -e .
 
 ```bash
 # RECOMMENDED: Start Studio (frontend + backend)
-python -m sage.studio.config.backend.api
+sage studio start
+
+# Advanced options
+sage studio start --dev          # Development mode (default, Vite dev server)
+sage studio start --prod         # Production mode (requires npm run build first)
+sage studio start --port 5173    # Custom frontend port
+sage studio status              # Check if Studio is running
+sage studio stop                # Stop Studio
+sage studio logs --follow       # View logs
 
 # Or use the quickstart script for first-time setup
 ./quickstart.sh
 ```
 
-**Note**: The `sage studio start` CLI command is planned but not yet implemented. For now, start the backend directly using the Python module command above. The frontend is served by the backend on port 8889.
+**Note**: The `sage studio` CLI command is implemented via a plugin system. Studio registers itself to SAGE CLI through entry points when installed. See [src/sage/studio/cli.py](src/sage/studio/cli.py) for implementation.
 
 ## 📦 PyPI Publishing
 
