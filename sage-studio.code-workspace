@@ -1,0 +1,107 @@
+{
+	"folders": [
+		{
+			"name": "sage-studio",
+			"path": "."
+		},
+		{
+			"name": "SAGE",
+			"path": "../SAGE"
+		},
+		{
+			"name": "SAGE-Pub",
+			"path": "../SAGE-Pub"
+		},
+		{
+			"name": "sagellm",
+			"path": "../sagellm"
+		},
+		{
+			"name": "neuromem",
+			"path": "../neuromem"
+		},
+		{
+			"name": "sageVDB",
+			"path": "../sageVDB"
+		},
+		{
+			"name": "sageData",
+			"path": "../sageData"
+		}
+	],
+	"settings": {
+		"python.defaultInterpreterPath": "${env:HOME}/miniconda3/envs/sage/bin/python",
+		"python.analysis.extraPaths": [
+			"${workspaceFolder:sage-studio}/src",
+			"${workspaceFolder:SAGE}/packages/sage-common/src",
+			"${workspaceFolder:SAGE}/packages/sage-platform/src",
+			"${workspaceFolder:SAGE}/packages/sage-kernel/src",
+			"${workspaceFolder:SAGE}/packages/sage-libs/src",
+			"${workspaceFolder:SAGE}/packages/sage-middleware/src",
+			"${workspaceFolder:SAGE}/packages/sage-cli/src",
+			"${workspaceFolder:SAGE}/packages/sage-tools/src"
+		],
+		"python.testing.pytestArgs": [
+			"tests",
+			"-v",
+			"--tb=short"
+		],
+		"python.testing.unittestEnabled": false,
+		"python.testing.pytestEnabled": true,
+		"files.exclude": {
+			"**/__pycache__": true,
+			"**/*.pyc": true,
+			"**/*.pyo": true,
+			"**/.pytest_cache": true,
+			"**/.mypy_cache": true,
+			"**/*.egg-info": true,
+			"**/node_modules": true,
+			"**/.vite": true,
+			".sage/build": true,
+			".sage/cache": true
+		},
+		"search.exclude": {
+			"**/node_modules": true,
+			"**/.git": true,
+			".sage/build": true,
+			".sage/cache": true,
+			"**/dist": true,
+			"**/*.egg-info": true,
+			"**/.vite": true
+		},
+		"editor.formatOnSave": true,
+		"editor.codeActionsOnSave": {
+			"source.organizeImports": "explicit"
+		},
+		"[python]": {
+			"editor.defaultFormatter": "charliermarsh.ruff",
+			"editor.formatOnSave": true
+		},
+		"[typescript]": {
+			"editor.defaultFormatter": "esbenp.prettier-vscode",
+			"editor.formatOnSave": true
+		},
+		"[typescriptreact]": {
+			"editor.defaultFormatter": "esbenp.prettier-vscode",
+			"editor.formatOnSave": true
+		},
+		"ruff.configurationPreference": "filesystemFirst",
+		"git.enableSmartCommit": true,
+		"git.confirmSync": false
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-python.python",
+			"ms-python.vscode-pylance",
+			"charliermarsh.ruff",
+			"dbaeumer.vscode-eslint",
+			"esbenp.prettier-vscode",
+			"github.copilot",
+			"github.copilot-chat",
+			"redhat.vscode-yaml",
+			"tamasfe.even-better-toml",
+			"yzhang.markdown-all-in-one",
+			"DavidAnson.vscode-markdownlint"
+		]
+	}
+}
