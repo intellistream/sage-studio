@@ -35,6 +35,10 @@
 		{
 			"name": "sage-sias",
 			"path": "../sage-sias"
+		},
+		{
+			"name": "sage-finetune",
+			"path": "../sage-finetune"
 		}
 	],
 	"settings": {
@@ -48,8 +52,10 @@
 			"${workspaceFolder:SAGE}/packages/sage-middleware/src",
 			"${workspaceFolder:SAGE}/packages/sage-cli/src",
 			"${workspaceFolder:SAGE}/packages/sage-tools/src",
+			"${workspaceFolder:sagellm}/src",
 			"${workspaceFolder:sage-agentic}/src",
-			"${workspaceFolder:sage-sias}/src"
+			"${workspaceFolder:sage-sias}/src",
+			"${workspaceFolder:sage-finetune}/src"
 		],
 		"python.testing.pytestArgs": [
 			"tests",

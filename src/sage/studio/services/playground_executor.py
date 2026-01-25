@@ -184,13 +184,13 @@ class PlaygroundExecutor:
             logger.info(f"   🌐 原始 api_base: '{api_base}'")
 
             if not api_base:
-                from sage.common.config.ports import SagePorts
+                from sage.studio.config.ports import StudioPorts
 
                 detected = None
                 for port in [
-                    SagePorts.get_recommended_llm_port(),
-                    SagePorts.LLM_DEFAULT,
-                    SagePorts.BENCHMARK_LLM,
+                    StudioPorts.get_recommended_llm_port(),
+                    StudioPorts.LLM_DEFAULT,
+                    StudioPorts.BENCHMARK_LLM,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate, timeout=1.0):

@@ -40,60 +40,41 @@ def start(
     backend_port: Optional[int] = typer.Option(
         None, "--backend-port", help="Backend API port (default: 8080)"
     ),
-    gateway_port: Optional[int] = typer.Option(
-        None, "--gateway-port", help="Gateway port (default: 8000)"
-    ),
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
     dev: bool = typer.Option(True, "--dev/--prod", help="Development or production mode"),
-    llm: Optional[str] = typer.Option(None, "--llm", help="LLM service URL"),
-    llm_model: Optional[str] = typer.Option(
-        None, "--llm-model", help="LLM model to use"
-    ),
-    embedding: Optional[str] = typer.Option(None, "--embedding", help="Embedding service URL"),
-    embedding_model: Optional[str] = typer.Option(
-        None, "--embedding-model", help="Embedding model to use"
-    ),
-    use_finetuned: bool = typer.Option(
-        False, "--use-finetuned", help="Use finetuned model"
-    ),
-    interactive: Optional[bool] = typer.Option(
-        None, "--interactive/--no-interactive", help="Interactive mode"
-    ),
     skip_confirm: bool = typer.Option(
         False, "--yes", "-y", help="Skip confirmation prompts"
-    ),
-    no_embedding: bool = typer.Option(
-        False, "--no-embedding", help="Skip embedding service"
     ),
 ):
     """Start SAGE Studio (frontend + backend)."""
     manager = _get_studio_manager()
     manager.start(
-        frontend_port=frontend_port,
+        port=frontend_port,
         backend_port=backend_port,
-        gateway_port=gateway_port,
         host=host,
         dev=dev,
-        llm=llm,
-        llm_model=llm_model,
-        embedding=embedding,
-        embedding_model=embedding_model,
-        use_finetuned=use_finetuned,
-        interactive=interactive,
         skip_confirm=skip_confirm,
-        no_embedding=no_embedding,
     )
 
 
 @app.command()
 def stop(
-    stop_infrastructure: bool = typer.Option(
-        False, "--stop-infra", help="Also stop gateway/LLM services"
+    stop_gateway: bool = typer.Option(
+        False, "--stop-gateway", help="Also stop gateway service"
+    ),
+    stop_llm: bool = typer.Option(
+        False, "--stop-llm", help="Also stop LLM service"
+    ),
+    stop_all: bool = typer.Option(
+        False, "--all", help="Stop all services (gateway + LLM)"
     )
 ):
     """Stop SAGE Studio."""
     manager = _get_studio_manager()
-    manager.stop(stop_infrastructure=stop_infrastructure)
+    if stop_all:
+        manager.stop(stop_gateway=True, stop_llm=True)
+    else:
+        manager.stop(stop_gateway=stop_gateway, stop_llm=stop_llm)
 
 
 @app.command()
@@ -118,8 +99,9 @@ def restart(
     """Restart SAGE Studio."""
     manager = _get_studio_manager()
     console.print("🔄 Restarting Studio...")
-    manager.stop(stop_infrastructure=False)
-    manager.start(frontend_port=frontend_port, dev=dev, skip_confirm=True)
+    # 重启时不停止 Gateway 和 LLM 服务（它们可能被其他服务使用）
+    manager.stop(stop_gateway=False, stop_llm=False)
+    manager.start(port=frontend_port, dev=dev, skip_confirm=True)
 
 
 @app.command()

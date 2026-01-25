@@ -270,14 +270,14 @@ class PipelineBuilder:
 
             # 确保 base_url 字段存在（如果还没有），本地优先
             if "base_url" not in enhanced:
-                from sage.common.config.ports import SagePorts
+                from sage.studio.config.ports import StudioPorts
 
                 # 优先探测本地 LLM 端点（8001 → 8901）
                 detected = None
                 for port in [
-                    SagePorts.get_recommended_llm_port(),
-                    SagePorts.LLM_DEFAULT,
-                    SagePorts.BENCHMARK_LLM,
+                    StudioPorts.get_recommended_llm_port(),
+                    StudioPorts.LLM_DEFAULT,
+                    StudioPorts.BENCHMARK_LLM,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate):

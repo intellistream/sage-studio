@@ -5,6 +5,7 @@ Studio Services - Business Logic Layer
 所有 Pipeline 执行都委托给 SAGE Engine。
 """
 
+# Intent dependencies are now fixed - can import directly
 from .agent_orchestrator import AgentOrchestrator, get_orchestrator
 from .document_loader import DocumentLoader, load_documents
 from .file_upload_service import FileUploadService, get_file_upload_service
@@ -24,6 +25,7 @@ from .workflow_generator import (
     WorkflowGenerator,
     generate_workflow_from_chat,
 )
+
 
 __all__ = [
     # Agent Orchestrator

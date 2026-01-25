@@ -24,9 +24,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
-from sage.common.config.ports import SagePorts
+from sage.studio.config.ports import StudioPorts
 from sage.common.config.user_paths import get_user_data_dir as get_common_user_data_dir
-from sage.studio.services.agent_orchestrator import get_orchestrator
+from sage.studio.services import AgentOrchestrator, get_orchestrator
 from sage.studio.services.auth_service import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     AuthService,
@@ -42,7 +42,7 @@ from sage.studio.services.stream_handler import get_stream_handler
 # Gateway URL for API calls
 # Use 127.0.0.1 instead of localhost to avoid IPv6 issues and ensure consistent behavior
 GATEWAY_HOST = os.getenv("SAGE_GATEWAY_HOST", "127.0.0.1")
-GATEWAY_BASE_URL = f"http://{GATEWAY_HOST}:{SagePorts.GATEWAY_DEFAULT}"
+GATEWAY_BASE_URL = f"http://{GATEWAY_HOST}:{StudioPorts.GATEWAY}"
 
 # Load environment variables from .env file
 try:
@@ -308,14 +308,14 @@ app = FastAPI(
 allowed_origins = [
     "http://localhost:5173",  # Vite 开发服务器默认端口
     "http://localhost:4173",  # Vite preview 服务器默认端口
-    f"http://localhost:{SagePorts.STUDIO_FRONTEND}",
-    f"http://127.0.0.1:{SagePorts.STUDIO_FRONTEND}",
-    f"http://0.0.0.0:{SagePorts.STUDIO_FRONTEND}",
+    f"http://localhost:{StudioPorts.FRONTEND}",
+    f"http://127.0.0.1:{StudioPorts.FRONTEND}",
+    f"http://0.0.0.0:{StudioPorts.FRONTEND}",
 ]
 
 # 添加常用开发端口
 for port in [5173, 4173, 35180]:
-    if port != SagePorts.STUDIO_FRONTEND:
+    if port != StudioPorts.FRONTEND:
         allowed_origins.extend(
             [
                 f"http://localhost:{port}",
@@ -1809,11 +1809,11 @@ async def send_chat_message(
         # 2. If not set, try to detect from Gateway
         if not model_to_use:
             try:
-                from sage.common.config.ports import SagePorts
+                from sage.studio.config.ports import StudioPorts
                 from sage.llm import UnifiedInferenceClient
 
                 client = UnifiedInferenceClient.create(
-                    control_plane_url=f"http://localhost:{SagePorts.GATEWAY_DEFAULT}/v1"
+                    control_plane_url=f"http://localhost:{StudioPorts.GATEWAY}/v1"
                 )
                 detected = client._get_default_llm_model()
                 if detected and detected != "default":
@@ -2403,7 +2403,7 @@ async def create_finetune_task(request: FinetuneCreateRequest):
     """创建微调任务（带 OOM 风险检测）"""
     import torch
 
-    from sage.libs.finetune import finetune_manager
+    from isage_finetune import finetune_manager
 
     # GPU 显存检测
     warnings = []
@@ -2467,7 +2467,7 @@ async def create_finetune_task(request: FinetuneCreateRequest):
 @app.get("/api/finetune/tasks")
 async def list_finetune_tasks():
     """列出所有微调任务"""
-    from sage.libs.finetune import finetune_manager
+    from isage_finetune import finetune_manager
 
     tasks = finetune_manager.list_tasks()
     return [task.to_dict() for task in tasks]
@@ -2476,7 +2476,7 @@ async def list_finetune_tasks():
 @app.get("/api/finetune/tasks/{task_id}")
 async def get_finetune_task(task_id: str):
     """获取微调任务详情"""
-    from sage.libs.finetune import finetune_manager
+    from isage_finetune import finetune_manager
 
     task = finetune_manager.get_task(task_id)
     if not task:
@@ -2487,7 +2487,7 @@ async def get_finetune_task(task_id: str):
 @app.get("/api/finetune/models")
 async def list_finetune_models():
     """获取可用模型列表（基础模型 + 微调后的模型）"""
-    from sage.libs.finetune import finetune_manager
+    from isage_finetune import finetune_manager
 
     return finetune_manager.list_available_models()
 
@@ -2514,7 +2514,7 @@ async def switch_model(model_path: str):
 @app.get("/api/finetune/current-model")
 async def get_current_model():
     """获取当前使用的模型"""
-    from sage.libs.finetune import finetune_manager
+    from isage_finetune import finetune_manager
 
     return {"current_model": finetune_manager.get_current_model()}
 
@@ -2551,7 +2551,7 @@ async def download_finetuned_model(task_id: str):
 
     from fastapi.responses import FileResponse
 
-    from sage.libs.finetune import finetune_manager
+    from isage_finetune import finetune_manager
 
     task = finetune_manager.get_task(task_id)
     if not task:
@@ -2589,7 +2589,7 @@ async def download_finetuned_model(task_id: str):
 @app.delete("/api/finetune/tasks/{task_id}")
 async def delete_finetune_task(task_id: str):
     """删除微调任务（仅允许删除已完成、失败或取消的任务）"""
-    from sage.libs.finetune import FinetuneStatus, finetune_manager
+    from isage_finetune import FinetuneStatus, finetune_manager
 
     if finetune_manager.delete_task(task_id):
         return {"status": "success", "message": f"任务 {task_id} 已删除"}
@@ -2615,7 +2615,7 @@ async def delete_finetune_task(task_id: str):
 @app.post("/api/finetune/tasks/{task_id}/cancel")
 async def cancel_finetune_task(task_id: str):
     """取消运行中的微调任务"""
-    from sage.libs.finetune import FinetuneStatus, finetune_manager
+    from isage_finetune import FinetuneStatus, finetune_manager
 
     task = finetune_manager.tasks.get(task_id)
     if not task:
@@ -3301,7 +3301,7 @@ async def get_llm_status():
             _merge_model(detected)
 
         if not available_models:
-            default_base = f"http://127.0.0.1:{SagePorts.BENCHMARK_LLM}/v1"
+            default_base = f"http://127.0.0.1:8901/v1"  # Benchmark LLM default port
             defaults = [
                 {
                     "name": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -3616,6 +3616,7 @@ async def test_dataset_source(source_name: str):
 
 
 if __name__ == "__main__":
-    # NOTE: 后端 API 已合并到 Gateway，推荐通过 sage gateway start 启动。
-    # 此处保留用于独立调试，生产环境请使用 Gateway。
-    uvicorn.run(app, host="0.0.0.0", port=SagePorts.GATEWAY_DEFAULT)
+    # NOTE: Studio 后端独立运行在 8080 端口
+    # 前端在 5173，Gateway 在 8889
+    from sage.studio.config.ports import StudioPorts
+    uvicorn.run(app, host="0.0.0.0", port=StudioPorts.BACKEND)

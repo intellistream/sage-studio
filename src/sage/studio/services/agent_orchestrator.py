@@ -11,12 +11,14 @@ import asyncio
 import logging
 import os
 import time
+from enum import Enum
 from typing import AsyncGenerator
+from dataclasses import dataclass
 
 import httpx
 
-from sage.common.config.ports import SagePorts
-from sage_libs.sage_agentic.intent import IntentClassifier, IntentResult, UserIntent
+from sage.studio.config.ports import StudioPorts
+from sage.libs.agentic.interface.base import Intent, IntentClassifier
 from sage_libs.sage_agentic.workflows.router import (
     WorkflowDecision,
     WorkflowRequest,
@@ -31,6 +33,23 @@ from sage.studio.services.knowledge_manager import KnowledgeManager
 from sage.studio.services.memory_integration import get_memory_service
 
 logger = logging.getLogger(__name__)
+
+
+# Studio-specific Intent types (temporary definitions until sage-agentic provides them)
+class UserIntent(str, Enum):
+    """用户意图枚举"""
+    KNOWLEDGE_QUERY = "knowledge_query"
+    SAGE_CODING = "sage_coding"
+    SYSTEM_OPERATION = "system_operation"
+    GENERAL_CHAT = "general_chat"
+
+
+@dataclass
+class IntentResult:
+    """意图识别结果"""
+    intent: UserIntent
+    confidence: float = 1.0
+    entities: dict | None = None
 
 
 class AgentOrchestrator:
@@ -370,10 +389,10 @@ class AgentOrchestrator:
 
         host = os.environ.get("SAGE_GATEWAY_HOST")
         if host:
-            return f"http://{host}:{SagePorts.GATEWAY_DEFAULT}"
+            return f"http://{host}:{StudioPorts.GATEWAY}"
 
         # Local-first: try gateway default port
-        return f"http://127.0.0.1:{SagePorts.GATEWAY_DEFAULT}"
+        return f"http://127.0.0.1:{StudioPorts.GATEWAY}"
 
     def _format_context(self, context_items: list, evidence: list[dict]) -> str:
         """Build a compact context string for the system prompt."""

@@ -234,10 +234,28 @@ If `sage-pypi-publisher` fails:
 ## 🎯 When Helping with Studio
 
 1. **Understand dependencies**: Studio depends on SAGE + agentic + SIAS
-2. **Check imports**: Use `sage_libs.sage_agentic.*`, NOT `sage.libs.agentic.intent`
+2. **Check imports**: Use correct import paths from SAGE main repo, NOT deprecated paths
 3. **Test locally**: Always test startup after changes
 4. **Document changes**: Update README if API changes
 5. **Version bumps**: Follow 4-digit semver (X.Y.Z.BUILD)
+
+## 🚫 Critical Rules
+
+### NO Backward Compatibility Code
+
+**❌ NEVER create backward compatibility layers:**
+- NO stub files for deprecated modules
+- NO try-except fallback imports
+- NO compatibility shims or adapters for old APIs
+- NO "temporary" workarounds that stay forever
+
+**✅ ALWAYS fix issues properly:**
+- Update import paths directly to correct locations
+- Fix dependency relationships at the source
+- Remove deprecated code completely
+- Document breaking changes clearly
+
+**Rationale**: Backward compatibility code creates technical debt, hides real issues, and makes debugging harder. Fix problems once, fix them right.
 
 ---
 

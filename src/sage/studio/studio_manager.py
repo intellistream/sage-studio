@@ -16,7 +16,7 @@ import requests
 from rich.console import Console
 from rich.table import Table
 
-from sage.common.config.ports import SagePorts
+from sage.studio.config.ports import StudioPorts
 from sage.common.config.user_paths import get_user_paths
 
 console = Console()
@@ -57,10 +57,10 @@ class StudioManager:
         self.dist_dir = self.studio_cache_dir / "dist"
 
         # React + Vite 默认端口是 5173
-        self.default_port = SagePorts.STUDIO_FRONTEND
-        self.backend_port = SagePorts.STUDIO_BACKEND  # Studio backend API
+        self.default_port = StudioPorts.FRONTEND
+        self.backend_port = StudioPorts.BACKEND  # Studio backend API
         # Allow env override for gateway port; fallback logic handled in _start_gateway
-        self.gateway_port = int(os.environ.get("SAGE_GATEWAY_PORT", str(SagePorts.GATEWAY_DEFAULT)))
+        self.gateway_port = int(os.environ.get("SAGE_GATEWAY_PORT", str(StudioPorts.GATEWAY)))
         self.default_host = "0.0.0.0"  # 修改为监听所有网络接口
 
         # 确保所有目录存在
@@ -214,36 +214,39 @@ class StudioManager:
             return False
 
     def is_gateway_running(self) -> int | None:
-        """检查 Gateway 是否运行中"""
-        # 方法1: 检查 PID 文件
-        if self.gateway_pid_file.exists():
+        """检查 Gateway 是否运行中
+
+        Note: Gateway 现在由 `sage gateway` 命令管理，PID 文件位于 ~/.sage/gateway/gateway.pid
+        """
+        # Gateway CLI 的 PID 文件位置
+        gateway_cli_pid_file = Path.home() / ".sage" / "gateway" / "gateway.pid"
+
+        # 方法1: 检查 Gateway CLI 的 PID 文件
+        if gateway_cli_pid_file.exists():
             try:
-                with open(self.gateway_pid_file) as f:
+                with open(gateway_cli_pid_file) as f:
                     pid = int(f.read().strip())
 
                 if psutil.pid_exists(pid):
-                    proc = psutil.Process(pid)
-                    # 检查是否是 sage-gateway 进程
-                    cmdline = " ".join(proc.cmdline())
-                    if "sage-gateway" in cmdline or "gateway" in cmdline:
-                        return pid
+                    return pid
 
-                # PID 文件存在但进程不存在，清理文件
-                self.gateway_pid_file.unlink()
+                # PID 文件存在但进程不存在（不清理，让 sage gateway 自己管理）
             except Exception:
                 pass
 
-        # 方法2: 通过端口检查
+        # 方法2: 通过端口检查（健康检查）
         try:
-            response = requests.get(f"http://localhost:{self.gateway_port}/health", timeout=1)
+            response = requests.get(
+                f"http://localhost:{self.gateway_port}/health",
+                timeout=1,
+                proxies={"http": None, "https": None}  # 禁用代理
+            )
             if response.status_code == 200:
                 # Gateway 在运行但没有 PID 文件，尝试找到进程
                 for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                     try:
                         cmdline = " ".join(proc.cmdline())
-                        if "sage-gateway" in cmdline or (
-                            "python" in proc.name().lower() and "gateway" in cmdline
-                        ):
+                        if "isagellm.gateway" in cmdline or "sage-gateway" in cmdline:
                             return proc.pid
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
@@ -270,98 +273,45 @@ class StudioManager:
         console.print(f"[blue]🚀 启动 Gateway 服务 ({host}:{port})...[/blue]")
 
         try:
-            # 检查 sage-llm-gateway 命令是否可用
-            result = subprocess.run(["which", "sage-llm-gateway"], capture_output=True, text=True)
-            if result.returncode != 0:
-                console.print(
-                    "[yellow]⚠️  sage-llm-gateway 命令未找到，尝试使用 python -m sage.llm.gateway.server[/yellow]"
-                )
-                cmd = [
-                    "python",
-                    "-m",
-                    "sage.llm.gateway.server",
-                    "--host",
-                    host,
-                    "--port",
-                    str(port),
-                ]
-            else:
-                cmd = ["sage-llm-gateway", "--host", host, "--port", str(port)]
+            # 使用 sage gateway start 命令（这是正确的 SAGE Gateway CLI）
+            cmd = [
+                "sage",
+                "gateway",
+                "start",
+                "--host",
+                host,
+                "--port",
+                str(port),
+                "--background",  # 后台运行
+            ]
 
-            # 启动进程
-            log_handle = open(self.gateway_log_file, "w")
-            process = subprocess.Popen(
+            # 执行启动命令（sage gateway start 会自动管理日志和 PID）
+            result = subprocess.run(
                 cmd,
-                stdin=subprocess.DEVNULL,  # 阻止子进程读取 stdin
-                stdout=log_handle,
-                stderr=log_handle,
-                start_new_session=True,
+                capture_output=True,
+                text=True,
+                timeout=35,  # sage gateway start 会等待最多 30 秒
             )
-            # 注意：不关闭 log_handle，让子进程继承并管理它
 
-            # 保存 PID
-            with open(self.gateway_pid_file, "w") as f:
-                f.write(str(process.pid))
+            if result.returncode != 0:
+                console.print(f"[red]❌ Gateway 启动失败: {result.stderr}[/red]")
+                return False
 
-            # 等待服务启动 - 增加到 60 秒，因为 Gateway 需要加载 studio routes
-            console.print("[blue]等待 Gateway 服务启动...[/blue]")
-            max_wait = 60  # 最多等待 60 秒
+            # sage gateway start 会自动管理 PID 和健康检查
+            # 这里只需要验证一下
+            existing_pid = self.is_gateway_running()
+            if existing_pid:
+                console.print(f"[green]✅ Gateway 启动成功 (PID: {existing_pid})[/green]")
+                return True
+            else:
+                console.print("[yellow]⚠️  Gateway 启动命令执行成功，但进程未运行[/yellow]")
+                return False
 
-            # 创建不使用代理的 session
-            session = requests.Session()
-            session.trust_env = False
-
-            for i in range(max_wait):
-                # 检查进程是否还在运行
-                if not psutil.pid_exists(process.pid):
-                    console.print("[red]❌ Gateway 进程已退出[/red]")
-                    # 输出日志帮助调试
-                    if self.gateway_log_file.exists():
-                        console.print("[yellow]Gateway 日志（最后 30 行）:[/yellow]")
-                        try:
-                            with open(self.gateway_log_file) as f:
-                                lines = f.readlines()
-                                for line in lines[-30:]:
-                                    console.print(f"[dim]  {line.rstrip()}[/dim]")
-                        except Exception:
-                            pass
-                    return False
-
-                try:
-                    response = session.get(f"http://localhost:{port}/health", timeout=2)
-                    if response.status_code == 200:
-                        console.print(
-                            f"[green]✅ Gateway 服务启动成功 (PID: {process.pid}, 耗时 {i + 1} 秒)[/green]"
-                        )
-                        console.print(f"[blue]📡 Gateway API: http://{host}:{port}[/blue]")
-                        return True
-                except Exception:
-                    pass
-
-                # 每 10 秒输出一次状态
-                if (i + 1) % 10 == 0:
-                    console.print(f"[blue]   等待 Gateway 响应... ({i + 1}/{max_wait}秒)[/blue]")
-
-                time.sleep(1)
-
-            # 超时但进程还在，可能只是启动慢
-            if psutil.pid_exists(process.pid):
-                console.print("[yellow]⚠️  Gateway 启动超时，但进程仍在运行[/yellow]")
-                console.print(f"[yellow]   请检查日志: {self.gateway_log_file}[/yellow]")
-                # 输出日志最后几行
-                if self.gateway_log_file.exists():
-                    try:
-                        with open(self.gateway_log_file) as f:
-                            lines = f.readlines()
-                            if lines:
-                                console.print("[yellow]   Gateway 日志（最后 10 行）:[/yellow]")
-                                for line in lines[-10:]:
-                                    console.print(f"[dim]     {line.rstrip()}[/dim]")
-                    except Exception:
-                        pass
-                return True  # 进程还在，认为可能成功
-
-            console.print("[red]❌ Gateway 启动失败[/red]")
+        except subprocess.TimeoutExpired:
+            console.print("[red]❌ Gateway 启动超时[/red]")
+            return False
+        except Exception as e:
+            console.print(f"[red]❌ Gateway 启动失败: {e}[/red]")
             return False
 
         except Exception as e:
@@ -397,6 +347,131 @@ class StudioManager:
             return True
         except Exception as e:
             console.print(f"[red]❌ 停止 Gateway 失败: {e}[/red]")
+            return False
+
+    def is_llm_running(self) -> int | None:
+        """检查 LLM 服务是否运行中
+
+        Returns:
+            int: 进程 PID，如果未运行返回 None
+        """
+        # 方法1: 通过端口检查（探测 LLM 服务）
+        llm_ports = [8001, 8901]  # LLM_DEFAULT, BENCHMARK_LLM
+
+        for port in llm_ports:
+            try:
+                response = requests.get(
+                    f"http://localhost:{port}/v1/models",
+                    timeout=1,
+                    proxies={"http": None, "https": None}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    # 检查是否有可用模型
+                    if data.get("data") and len(data["data"]) > 0:
+                        # 尝试找到进程 PID
+                        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                            try:
+                                cmdline = " ".join(proc.cmdline())
+                                if "sage-llm" in cmdline or "vllm" in cmdline:
+                                    return proc.pid
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                continue
+                        return -1  # 运行中但找不到 PID
+            except Exception:
+                continue
+
+        return None
+
+    def start_llm_service(self, model: str | None = None, port: int = 8001, mock: bool = True) -> bool:
+        """启动 LLM 推理服务
+
+        Args:
+            model: 模型名称，如 "Qwen/Qwen2.5-0.5B-Instruct"
+            port: 服务端口
+            mock: 是否使用 mock 模式（CPU，无需 GPU）
+
+        Returns:
+            bool: 是否启动成功
+        """
+        # 检查是否已经运行
+        existing_pid = self.is_llm_running()
+        if existing_pid:
+            if existing_pid == -1:
+                console.print("[green]✅ LLM 服务已在运行中（外部启动）[/green]")
+            else:
+                console.print(f"[green]✅ LLM 服务已在运行中 (PID: {existing_pid})[/green]")
+            return True
+
+        # 默认使用小模型用于测试
+        if model is None:
+            model = "sshleifer/tiny-gpt2"
+
+        mode_str = "Mock (CPU)" if mock else "Full"
+        console.print(f"[blue]🚀 启动 LLM 服务 ({mode_str} 模式)...[/blue]")
+        console.print(f"   模型: {model}")
+        console.print(f"   端口: {port}")
+
+        try:
+            # 构建启动命令
+            cmd = ["sage-llm", "serve", "--host", "0.0.0.0", "--port", str(port)]
+
+            if mock:
+                cmd.append("--mock")
+
+            if model:
+                cmd.extend(["--model", model])
+
+            # 后台启动
+            log_file = Path("/tmp/sage-studio-llm.log")
+            with open(log_file, "w") as f:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True
+                )
+
+            # 等待服务启动（最多10秒）
+            import time
+            for _ in range(20):
+                time.sleep(0.5)
+                if self.is_llm_running():
+                    console.print(f"[green]✅ LLM 服务启动成功 (PID: {process.pid})[/green]")
+                    console.print(f"   日志: {log_file}")
+                    return True
+
+            console.print("[yellow]⚠️  LLM 服务启动命令执行成功，但未能在10秒内探测到服务[/yellow]")
+            console.print(f"   请检查日志: {log_file}")
+            return False
+
+        except Exception as e:
+            console.print(f"[red]❌ LLM 服务启动失败: {e}[/red]")
+            return False
+
+    def stop_llm_service(self) -> bool:
+        """停止 LLM 服务"""
+        pid = self.is_llm_running()
+        if not pid:
+            console.print("[yellow]LLM 服务未运行[/yellow]")
+            return False
+
+        if pid == -1:
+            console.print("[yellow]⚠️  LLM 服务在运行但无法确定 PID，请手动停止[/yellow]")
+            return False
+
+        try:
+            proc = psutil.Process(pid)
+            proc.terminate()
+            proc.wait(timeout=10)
+            console.print(f"[green]✅ LLM 服务已停止 (PID: {pid})[/green]")
+            return True
+        except psutil.TimeoutExpired:
+            proc.kill()
+            console.print(f"[yellow]⚠️  LLM 服务强制停止 (PID: {pid})[/yellow]")
+            return True
+        except Exception as e:
+            console.print(f"[red]❌ 停止 LLM 服务失败: {e}[/red]")
             return False
 
     def check_dependencies(self) -> bool:
@@ -1238,6 +1313,7 @@ if __name__ == "__main__":
         dev: bool = True,
         backend_port: int | None = None,
         auto_gateway: bool = True,  # 新增：是否自动启动 gateway
+        auto_llm: bool = True,  # 新增：是否自动启动 LLM 服务
         auto_install: bool = True,  # 新增：是否自动安装依赖
         auto_build: bool = True,  # 新增：是否自动构建（生产模式）
         skip_confirm: bool = False,  # 新增：跳过确认（用于 restart）
@@ -1254,10 +1330,26 @@ if __name__ == "__main__":
                 if not self.start_gateway(host=host):
                     console.print("[yellow]⚠️  Gateway 启动失败，Chat 模式可能无法正常使用[/yellow]")
                     console.print(
-                        f"[yellow]   您可以稍后手动启动: sage-gateway --host 0.0.0.0 --port {SagePorts.GATEWAY_DEFAULT}[/yellow]"
+                        f"[yellow]   您可以稍后手动启动: sage-gateway --host 0.0.0.0 --port {StudioPorts.GATEWAY}[/yellow]"
                     )
             else:
                 console.print(f"[green]✅ Gateway 已在运行中 (PID: {gateway_pid})[/green]")
+
+        # 检查并启动 LLM 服务（如果需要 Chat 模式）
+        if auto_llm:
+            llm_pid = self.is_llm_running()
+            if not llm_pid:
+                console.print("[blue]🔍 检测到 LLM 服务未运行，正在启动...[/blue]")
+                if not self.start_llm_service():
+                    console.print("[yellow]⚠️  LLM 服务启动失败，Chat 模式可能无法使用[/yellow]")
+                    console.print(
+                        "[yellow]   您可以稍后手动启动: sage-llm serve --mock --port 8001[/yellow]"
+                    )
+            else:
+                if llm_pid == -1:
+                    console.print("[green]✅ LLM 服务已在运行中（外部启动）[/green]")
+                else:
+                    console.print(f"[green]✅ LLM 服务已在运行中 (PID: {llm_pid})[/green]")
 
         # 后端 API 已合并进 Gateway，不再单独启动
 
@@ -1459,11 +1551,12 @@ if __name__ == "__main__":
             console.print(f"[red]启动失败: {e}[/red]")
             return False
 
-    def stop(self, stop_gateway: bool = False) -> bool:
+    def stop(self, stop_gateway: bool = False, stop_llm: bool = False) -> bool:
         """停止 Studio（前端）
 
         Args:
             stop_gateway: 是否同时停止 Gateway（默认不停止，因为可能被其他服务使用）
+            stop_llm: 是否同时停止 LLM 服务（默认不停止，因为可能被其他服务使用）
         """
         frontend_pid = self.is_running()
 
@@ -1518,6 +1611,13 @@ if __name__ == "__main__":
             if gateway_pid and gateway_pid != -1:
                 if self.stop_gateway():
                     stopped_services.append("Gateway")
+
+        # 可选：停止 LLM 服务
+        if stop_llm:
+            llm_pid = self.is_llm_running()
+            if llm_pid and llm_pid != -1:
+                if self.stop_llm_service():
+                    stopped_services.append("LLM服务")
 
         if stopped_services:
             console.print(f"[green]Studio {' 和 '.join(stopped_services)} 已停止[/green]")
@@ -1635,7 +1735,7 @@ if __name__ == "__main__":
             gateway_table.add_row("状态", "[red]未运行[/red]")
             gateway_table.add_row("端口", str(self.gateway_port))
             gateway_table.add_row(
-                "启动命令", f"sage-gateway --host 0.0.0.0 --port {SagePorts.GATEWAY_DEFAULT}"
+                "启动命令", f"sage-gateway --host 0.0.0.0 --port {StudioPorts.GATEWAY}"
             )
 
         gateway_table.add_row("PID文件", str(self.gateway_pid_file))

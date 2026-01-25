@@ -41,9 +41,15 @@ dependencies = [
     # SAGE meta package (includes all core packages)
     "isage>=0.2.0",
 
+    # sageLLM - IntelliStream自研推理引擎（包含Gateway、Control Plane、Backend等完整推理能力）
+    "isagellm>=0.1.0",
+
     # Agentic dependencies (independent packages)
     "isage-agentic>=0.1.0",
     "isage-sias>=0.1.0",
+
+    # Fine-tune dependencies (independent package)
+    "isage-finetune>=0.1.0",
 
     # Backend API dependencies
     "pydantic[email]>=2.10.0,<3.0.0",
