@@ -97,8 +97,12 @@ Repository = "https://github.com/intellistream/sage-studio.git"
 "Parent Project" = "https://github.com/intellistream/SAGE"
 
 [project.scripts]
-# Studio CLI commands will be integrated into sage CLI via sage-tools
-# No standalone scripts needed here
+# Studio CLI is registered as a sage CLI plugin via entry point
+# sage-cli will dynamically discover and load studio commands
+
+[project.entry-points."sage.cli.plugins"]
+# Register studio CLI to sage command
+studio = "sage.studio.cli:register_studio_command"
 
 [tool.setuptools.packages.find]
 namespaces = true
