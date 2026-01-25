@@ -16,8 +16,8 @@ from typing import AsyncGenerator
 import httpx
 
 from sage.common.config.ports import SagePorts
-from sage.libs.agentic.intent import IntentClassifier, IntentResult, UserIntent
-from sage.libs.agentic.workflows.router import (
+from sage_libs.sage_agentic.intent import IntentClassifier, IntentResult, UserIntent
+from sage_libs.sage_agentic.workflows.router import (
     WorkflowDecision,
     WorkflowRequest,
     WorkflowRoute,

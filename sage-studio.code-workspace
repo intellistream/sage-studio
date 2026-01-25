@@ -27,6 +27,14 @@
 		{
 			"name": "sageData",
 			"path": "../sageData"
+		},
+		{
+			"name": "sage-agentic",
+			"path": "../sage-agentic"
+		},
+		{
+			"name": "sage-sias",
+			"path": "../sage-sias"
 		}
 	],
 	"settings": {
@@ -39,7 +47,9 @@
 			"${workspaceFolder:SAGE}/packages/sage-libs/src",
 			"${workspaceFolder:SAGE}/packages/sage-middleware/src",
 			"${workspaceFolder:SAGE}/packages/sage-cli/src",
-			"${workspaceFolder:SAGE}/packages/sage-tools/src"
+			"${workspaceFolder:SAGE}/packages/sage-tools/src",
+			"${workspaceFolder:sage-agentic}/src",
+			"${workspaceFolder:sage-sias}/src"
 		],
 		"python.testing.pytestArgs": [
 			"tests",

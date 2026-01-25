@@ -4,7 +4,7 @@ Intelligent Workflow Generator for SAGE Studio
 这个模块是 sage-libs workflow generators 的包装器，
 为 SAGE Studio 提供简单的调用接口。
 
-实际的生成算法位于: sage.libs.agentic.workflow.generators
+实际的生成算法位于: sage_libs.sage_agentic.workflow.generators
 
 Layer: L6 (Studio Services)
 Dependencies: sage-libs (workflow generators)

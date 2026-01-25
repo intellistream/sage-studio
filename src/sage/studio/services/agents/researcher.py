@@ -5,7 +5,7 @@ Researcher Agent - Specialized agent for information retrieval
 import logging
 from typing import AsyncGenerator
 
-from sage.libs.agentic.agents.bots.searcher_bot import SearcherBot
+from sage_libs.sage_agentic.agents.bots.searcher_bot import SearcherBot
 from sage.studio.models.agent_step import AgentStep
 from sage.studio.services.agents.base import BaseAgent
 from sage.studio.tools.base import BaseTool

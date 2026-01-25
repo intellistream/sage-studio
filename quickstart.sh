@@ -67,8 +67,53 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${YELLOW}${BOLD}Step 2: Installing SAGE Studio${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-echo -e "${BLUE}Installing sage-studio (which will install isage and all dependencies)...${NC}"
-pip install -e "$PROJECT_ROOT"
+# Detect development mode (check if dependency repos exist locally)
+PARENT_DIR="$(dirname "$PROJECT_ROOT")"
+DEV_MODE=false
+
+echo -e "${BLUE}Checking for local development repositories...${NC}"
+
+# Check for common dependency repos
+if [ -d "$PARENT_DIR/sage-agentic/src" ] || [ -d "$PARENT_DIR/sage-sias" ] || [ -d "$PARENT_DIR/SAGE/packages" ]; then
+    DEV_MODE=true
+    echo -e "${YELLOW}✓ Found local development repositories${NC}"
+    echo -e "${YELLOW}  Using development mode (pip install -e)${NC}"
+else
+    echo -e "${BLUE}  No local repos found, using PyPI packages${NC}"
+fi
+
+echo ""
+
+# Install dependencies
+if [ "$DEV_MODE" = true ]; then
+    echo -e "${BLUE}Installing in development mode...${NC}"
+
+    # Install sage-agentic if available
+    if [ -d "$PARENT_DIR/sage-agentic" ]; then
+        echo -e "${CYAN}  → Installing sage-agentic from local source${NC}"
+        pip install -e "$PARENT_DIR/sage-agentic"
+    fi
+
+    # Install sage-sias if available
+    if [ -d "$PARENT_DIR/sage-sias" ]; then
+        echo -e "${CYAN}  → Installing sage-sias from local source${NC}"
+        pip install -e "$PARENT_DIR/sage-sias"
+    fi
+
+    # Install SAGE if available
+    if [ -d "$PARENT_DIR/SAGE/packages" ]; then
+        echo -e "${CYAN}  → Installing SAGE packages from local source${NC}"
+        cd "$PARENT_DIR/SAGE" && ./quickstart.sh --dev --yes || echo -e "${YELLOW}⚠ SAGE installation skipped${NC}"
+        cd "$PROJECT_ROOT"
+    fi
+
+    # Install studio itself in dev mode
+    echo -e "${CYAN}  → Installing sage-studio in development mode${NC}"
+    pip install -e "$PROJECT_ROOT"
+else
+    echo -e "${BLUE}Installing from PyPI...${NC}"
+    pip install -e "$PROJECT_ROOT"
+fi
 
 echo -e "${GREEN}✓ SAGE Studio installed${NC}"
 echo ""

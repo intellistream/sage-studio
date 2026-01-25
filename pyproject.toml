@@ -40,7 +40,11 @@ classifiers = [
 dependencies = [
     # SAGE meta package (includes all core packages)
     "isage>=0.2.0",
-    
+
+    # Agentic dependencies (independent packages)
+    "isage-agentic>=0.1.0",
+    "isage-sias>=0.1.0",
+
     # Backend API dependencies
     "pydantic[email]>=2.10.0,<3.0.0",
     "fastapi>=0.115.0,<1.0.0",
