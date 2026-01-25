@@ -38,10 +38,8 @@ classifiers = [
 
 # Core dependencies
 dependencies = [
-    # SAGE core packages (published to PyPI)
-    "isage-common>=0.2.0",
-    "isage-llm-core>=0.2.0",
-    "isage-llm-gateway>=0.2.0",
+    # SAGE meta package (includes all core packages)
+    "isage>=0.2.0",
     
     # Backend API dependencies
     "pydantic[email]>=2.10.0,<3.0.0",
