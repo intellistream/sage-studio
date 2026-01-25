@@ -80,7 +80,7 @@ workspace/
 ### Development Setup
 
 ```bash
-# Method 1: Use quickstart script
+# Method 1: Use quickstart script (RECOMMENDED)
 cd sage-studio
 ./quickstart.sh
 
@@ -89,18 +89,28 @@ pip install -e .
 ```
 
 **Dependencies Installation**:
-- `quickstart.sh` automatically installs all dependencies including `isage-agentic` and `isage-sias`
-- If dependencies are missing, they should be installed via pip, NOT manually cloned
+- `quickstart.sh` automatically detects development mode:
+  - **Development Mode**: If local repos exist (`sage-agentic`, `sage-sias`, `SAGE`), uses `pip install -e` for local development
+  - **Production Mode**: If no local repos found, installs from PyPI (`isage-agentic`, `isage-sias`)
+- Dependencies are automatically installed based on environment detection
+- If dependencies are missing in production, they should be installed via pip from PyPI
 
 ### Startup
 
 ```bash
-# Start Studio (frontend + backend)
+# RECOMMENDED: Start Studio (frontend + backend)
 sage studio start
 
-# Or manually
+# Advanced options
+sage studio start --dev        # Development mode with hot reload
+sage studio start --prod       # Production mode (requires npm run build first)
+sage studio start --port 8080  # Custom port
+
+# Manual backend startup (NOT recommended for regular use)
 python -m sage.studio.config.backend.api
 ```
+
+**Note**: Always use `sage studio start` instead of directly running the backend Python module. The CLI command handles proper initialization, environment setup, and process management.
 
 ## 📦 PyPI Publishing
 
