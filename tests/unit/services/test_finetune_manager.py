@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sage.libs.finetune import FinetuneManager, FinetuneStatus
+from isage_finetune import FinetuneManager, FinetuneStatus
 
 
 @pytest.fixture()

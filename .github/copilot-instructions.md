@@ -1,340 +1,262 @@
-# GitHub Copilot Instructions for SAGE Studio
+# SAGE Studio Copilot Instructions
 
-## 项目概述
+## 📋 Project Overview
 
-SAGE Studio 是一个现代化的低代码 Web UI 平台，用于可视化开发和管理 SAGE AI 数据流水线。项目采用前后端分离架构，后端使用 Python + FastAPI，前端使用 React + TypeScript。
+**SAGE Studio** is a modern low-code web UI for visually developing and managing SAGE data pipelines.
 
-## 技术栈
+| Property | Value |
+|----------|-------|
+| **Package Name** | `isage-studio` |
+| **Tech Stack** | React 18 + TypeScript + FastAPI |
+| **Architecture** | Frontend-Backend Separation |
+| **Layer** | L6 (Top-level application) |
 
-- **后端**: Python 3.10+, FastAPI, Pydantic, SQLite, ChromaDB
-- **前端**: React 18, TypeScript, Vite, ReactFlow, TailwindCSS
-- **核心引擎**: SAGE (isage-kernel, isage-middleware, isage-libs)
-- **部署**: Uvicorn, Node.js 18+
-
-## 核心架构
-
-### 关键模块
-
-1. **PipelineBuilder** (`src/sage/studio/services/pipeline_builder.py`)
-   - 将可视化 Flow 转换为 SAGE DataStream Pipeline
-   - 拓扑排序节点，构建执行图
-
-2. **NodeRegistry** (`src/sage/studio/services/node_registry.py`)
-   - 管理 UI 节点类型到 SAGE Operator 的映射
-   - 从 `data/operators/*.json` 加载节点定义
-
-3. **AgentOrchestrator** (`src/sage/studio/services/agent_orchestrator.py`)
-   - 意图分类和工作流路由
-   - 协调知识检索、工具调用和 Agent 执行
-
-4. **ChatManager** (`src/sage/studio/chat_manager.py`)
-   - 管理前端、后端、LLM 服务的生命周期
-   - 集成本地 LLM (通过 sageLLM)
-
-5. **Backend API** (`src/sage/studio/config/backend/api.py`)
-   - FastAPI 路由和端点
-   - JWT 认证和用户数据隔离
-
-### 目录结构
+## 🏗️ Architecture
 
 ```
-src/sage/studio/
-├── chat_manager.py          # 服务编排器
-├── studio_manager.py        # 核心管理器
-├── config/
-│   └── backend/api.py       # FastAPI 应用和路由
-├── services/                # 业务逻辑层
-│   ├── agent_orchestrator.py
-│   ├── pipeline_builder.py
-│   ├── node_registry.py
-│   ├── knowledge_manager.py
-│   ├── workflow_generator.py
-│   └── agents/              # 特定 Agent 实现
-├── models/                  # Pydantic 数据模型
-├── tools/                   # Agent 工具定义
-├── frontend/src/            # React 前端
-└── data/operators/          # 节点定义 (JSON)
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend (React + Vite)               │
+│  ┌───────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │  Flow Editor  │  │  Playground  │  │  Properties  │ │
+│  │   (Canvas)    │  │  (Chat Test) │  │  (Config)    │ │
+│  └───────────────┘  └──────────────┘  └──────────────┘ │
+└─────────────────────────────────────────────────────────┘
+                         ⬇ HTTP/REST API
+┌─────────────────────────────────────────────────────────┐
+│               Backend (FastAPI - api.py)                 │
+│  • Node Registry                                         │
+│  • Pipeline Builder                                      │
+│  • API Endpoints (flows, operators, execution)          │
+└─────────────────────────────────────────────────────────┘
+                         ⬇ Python API
+┌─────────────────────────────────────────────────────────┐
+│                  SAGE Core Engine                        │
+│  • sage-kernel (Environment, DataStream API)            │
+│  • sage-middleware (RAG Operators)                      │
+│  • sage-libs (IO: FileSource, PrintSink...)             │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## 代码风格指南
+## 🔗 Dependencies
 
-### Python
+### Core Dependencies
 
-- **格式化**: 使用 `black` (line-length=100)
-- **Linting**: 使用 `ruff`
-- **Docstring**: Google style
-- **导入顺序**: stdlib → third-party → local (按字母排序)
-- **类型注解**: 使用 `from __future__ import annotations` 和类型提示
+- **SAGE**: `isage>=0.2.0` - SAGE meta package
+- **Agentic**: `isage-agentic>=0.1.0` - Agent framework (intent, workflow, planning)
+- **SIAS**: `isage-sias>=0.1.0` - Sample importance-aware selection algorithms
 
-**示例**:
-```python
-"""Module docstring describing purpose."""
+### Agentic Module Details
 
-from __future__ import annotations
-
-import asyncio
-import logging
-from typing import AsyncGenerator
-
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-
-from sage.studio.services.node_registry import get_node_registry
-
-logger = logging.getLogger(__name__)
-
-
-class MyModel(BaseModel):
-    """Brief description.
-    
-    Attributes:
-        field: Description of field.
-    """
-    field: str
-    
-
-async def my_function(param: str) -> dict[str, any]:
-    """Brief description of function.
-    
-    Args:
-        param: Description of parameter.
-        
-    Returns:
-        Dictionary containing results.
-        
-    Raises:
-        ValueError: If param is invalid.
-    """
-    pass
-```
-
-### TypeScript/React
-
-- **格式化**: Prettier (2 spaces)
-- **Linting**: ESLint
-- **命名**: camelCase (变量/函数), PascalCase (组件/类型)
-- **导入顺序**: React → third-party → local components → styles
-
-**示例**:
-```typescript
-import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { useFlowStore } from '@/stores/flowStore';
-import './MyComponent.css';
-
-interface MyComponentProps {
-  title: string;
-  onSave?: (data: any) => void;
-}
-
-export const MyComponent: React.FC<MyComponentProps> = ({ title, onSave }) => {
-  const [isLoading, setIsLoading] = useState(false);
-  
-  useEffect(() => {
-    // Effect logic
-  }, []);
-  
-  return (
-    <div className="my-component">
-      <h2>{title}</h2>
-    </div>
-  );
-};
-```
-
-## 开发约定
-
-### API 端点设计
-
-- **RESTful 风格**: 使用标准 HTTP 方法 (GET, POST, PUT, DELETE)
-- **路径命名**: 小写，使用连字符 (`/api/flows`, `/api/knowledge-sources`)
-- **请求/响应**: 使用 Pydantic 模型验证
-- **错误处理**: 返回标准 HTTP 状态码和详细错误信息
+Studio uses agentic modules for intent classification and workflow routing:
 
 ```python
-@router.post("/flows", response_model=FlowResponse)
-async def create_flow(
-    flow: FlowCreate,
-    current_user: User = Depends(get_current_user)
-) -> FlowResponse:
-    """Create a new flow."""
-    try:
-        result = await flow_service.create(flow, user_id=current_user.id)
-        return FlowResponse(success=True, data=result)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+from sage_libs.sage_agentic.intent import IntentClassifier, UserIntent, IntentResult
+from sage_libs.sage_agentic.workflows.router import (
+    WorkflowRouter, WorkflowDecision, WorkflowRequest, WorkflowRoute
+)
 ```
 
-### 节点定义 (JSON)
+**Note**: These modules are from the independent `isage-agentic` package, NOT from SAGE core.
 
-所有节点定义存储在 `src/sage/studio/data/operators/*.json`，格式如下：
+## 📁 Workspace Structure
 
-```json
-{
-  "type": "OperatorName",
-  "category": "category_name",
-  "label": "Display Name",
-  "description": "Brief description",
-  "properties": {
-    "param_name": {
-      "type": "string|number|boolean|array|object",
-      "default": "default_value",
-      "description": "Parameter description",
-      "required": false,
-      "options": ["option1", "option2"]
-    }
-  },
-  "inputs": 1,
-  "outputs": 1
-}
+The Studio workspace includes multiple repositories:
+
+```
+workspace/
+├── sage-studio/          # This repository (L6)
+├── SAGE/                 # Core SAGE framework
+├── sage-agentic/         # Agent framework (isage-agentic)
+├── sage-sias/            # SIAS algorithms (isage-sias)
+├── sagellm/              # LLM inference engine (isagellm)
+├── neuromem/             # Memory management (isage-neuromem)
+├── sageVDB/              # Vector database (isage-vdb)
+├── sageData/             # Dataset management (isage-data)
+└── SAGE-Pub/             # Public documentation
 ```
 
-### 测试规范
+## 🚀 Installation
 
-- **Unit Tests**: `tests/unit/` - 测试单个函数/类
-- **Integration Tests**: `tests/integration/` - 测试 API 端点和服务交互
-- **Coverage Target**: >80% for services and models
-- **Naming**: `test_<function_name>_<scenario>`
-
-```python
-import pytest
-from sage.studio.services.pipeline_builder import PipelineBuilder
-
-def test_pipeline_builder_creates_valid_environment():
-    """Test that PipelineBuilder creates a valid SAGE environment."""
-    builder = PipelineBuilder()
-    pipeline = create_test_pipeline()
-    
-    env = builder.build(pipeline)
-    
-    assert env is not None
-    assert isinstance(env, BaseEnvironment)
-```
-
-### 前端状态管理
-
-使用 Zustand 进行状态管理：
-
-```typescript
-import { create } from 'zustand';
-
-interface FlowState {
-  nodes: Node[];
-  edges: Edge[];
-  addNode: (node: Node) => void;
-  updateNode: (id: string, data: any) => void;
-}
-
-export const useFlowStore = create<FlowState>((set) => ({
-  nodes: [],
-  edges: [],
-  addNode: (node) => set((state) => ({ 
-    nodes: [...state.nodes, node] 
-  })),
-  updateNode: (id, data) => set((state) => ({
-    nodes: state.nodes.map(n => n.id === id ? { ...n, data } : n)
-  }))
-}));
-```
-
-## 常见任务
-
-### 添加新的 Operator 节点
-
-1. 创建 JSON 定义: `src/sage/studio/data/operators/NewOperator.json`
-2. 在 `NodeRegistry` 中注册 (通常自动加载)
-3. 如需自定义 UI，在前端添加组件
-4. 添加单元测试
-
-### 添加新的 API 路由
-
-1. 在 `config/backend/api.py` 定义路由
-2. 在 `services/` 中实现业务逻辑
-3. 创建 Pydantic 请求/响应模型
-4. 编写集成测试
-5. 更新前端 API 客户端
-
-### 增强 Agent 功能
-
-1. 修改 `services/agent_orchestrator.py`
-2. 在 `tools/` 添加新工具
-3. 更新意图分类器 (如需要)
-4. 在 `services/agents/` 添加专门 Agent
-5. 使用 `verify_chat_ui.py` 测试
-
-## 依赖管理
-
-### Python 依赖
-
-- **核心**: `pyproject.toml` 中定义
-- **安装**: `pip install -e .` (开发模式)
-- **SAGE 包**: isage-common, isage-llm-core, isage-llm-gateway
-
-### 前端依赖
-
-- **配置**: `frontend/package.json`
-- **安装**: `sage studio npm install` (使用 Studio Manager)
-- **主要库**: react, react-dom, reactflow, axios, zustand
-
-## 安全注意事项
-
-1. **认证**: 所有受保护端点必须使用 `Depends(get_current_user)`
-2. **输入验证**: 使用 Pydantic 模型验证所有用户输入
-3. **密码**: 使用 Argon2 哈希，永不明文存储
-4. **敏感数据**: 不要在日志中记录 API keys、tokens、密码
-5. **CORS**: 仅允许前端域 (localhost:5173, localhost:8080)
-6. **文件上传**: 验证文件类型和大小
-
-## 调试技巧
-
-### 后端调试
+### Development Setup
 
 ```bash
-# 查看后端日志
-tail -f /tmp/sage-studio-backend.log
+# Method 1: Use quickstart script (RECOMMENDED)
+cd sage-studio
+./quickstart.sh
 
-# 手动启动后端 (方便添加断点)
-cd src/sage/studio/config/backend
-python -m pdb api.py
+# Method 2: Manual install
+pip install -e .
 ```
 
-### 前端调试
+**Dependencies Installation**:
+- `quickstart.sh` automatically detects development mode:
+  - **Development Mode**: If local repos exist (`sage-agentic`, `sage-sias`, `SAGE`), uses `pip install -e` for local development
+  - **Production Mode**: If no local repos found, installs from PyPI (`isage-agentic`, `isage-sias`)
+- Dependencies are automatically installed based on environment detection
+- If dependencies are missing in production, they should be installed via pip from PyPI
 
-- 使用 React DevTools 检查组件状态
-- 在 Chrome DevTools 中查看网络请求
-- 使用 `console.log()` 或 VS Code debugger
+### Startup
 
-### Pipeline 执行调试
+```bash
+# RECOMMENDED: Start Studio (frontend + backend)
+sage studio start
 
-1. 检查节点定义: `data/operators/<NodeName>.json`
-2. 验证 PipelineBuilder 日志
-3. 单独测试 SAGE Operator
-4. 使用 Playground 逐步执行
+# Advanced options
+sage studio start --dev          # Development mode (default, Vite dev server)
+sage studio start --prod         # Production mode (requires npm run build first)
+sage studio start --port 5173    # Custom frontend port
+sage studio status              # Check if Studio is running
+sage studio stop                # Stop Studio
+sage studio logs --follow       # View logs
 
-## 性能优化
+# Or use the quickstart script for first-time setup
+./quickstart.sh
+```
 
-- **后端**: 使用异步 API (`async/await`)，避免阻塞调用
-- **前端**: React.memo() 缓存组件，useMemo/useCallback 优化渲染
-- **数据库**: 为频繁查询字段添加索引
-- **API**: 实现分页、缓存、批量操作
+**Note**: The `sage studio` CLI command is implemented via a plugin system. Studio registers itself to SAGE CLI through entry points when installed. See [src/sage/studio/cli.py](src/sage/studio/cli.py) for implementation.
 
-## 文档维护
+## 📦 PyPI Publishing
 
-- **Docstrings**: 所有公共函数/类必须有文档
-- **README**: 重大功能添加后更新使用说明
-- **CHANGELOG**: 记录每个版本的变更
-- **API Docs**: FastAPI 自动生成，访问 `/docs`
+**All packages MUST be published via `sage-pypi-publisher`:**
 
-## 与 Copilot 协作的最佳方式
+### Publishing Workflow
 
-1. **明确需求**: 清楚描述要实现的功能或修复的 bug
-2. **提供上下文**: 提及相关文件路径和函数名
-3. **遵循规范**: 生成的代码自动符合上述代码风格
-4. **请求测试**: 要求为新功能生成相应的测试
-5. **检查依赖**: 确认生成的代码不引入未声明的依赖
+1. **Update Version** (4-digit semantic versioning: `MAJOR.MINOR.PATCH.BUILD`):
+   ```bash
+   # Edit pyproject.toml and src/sage/studio/_version.py
+   # Example: 0.2.0.1 → 0.2.0.2
+   ```
+
+2. **Publish to TestPyPI** (testing):
+   ```bash
+   cd /path/to/sage-pypi-publisher
+   ./publish.sh sage-studio --test-pypi --auto-bump patch
+   ```
+
+3. **Publish to PyPI** (production):
+   ```bash
+   ./publish.sh sage-studio --auto-bump patch --no-dry-run
+   ```
+
+### Dependencies Publishing
+
+**CRITICAL**: When updating `isage-agentic` or `isage-sias`, publish them FIRST:
+
+```bash
+# 1. Publish sage-agentic
+cd /path/to/sage-agentic
+sage-pypi-publisher build . --upload --no-dry-run
+
+# 2. Publish sage-sias
+cd /path/to/sage-sias
+sage-pypi-publisher build . --upload --no-dry-run
+
+# 3. Update Studio's pyproject.toml if needed
+# Then publish Studio
+cd /path/to/sage-studio
+./quickstart.sh  # Reinstall with new dependencies
+```
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test
+pytest tests/unit/services/test_agent_orchestrator.py -v
+
+# With coverage
+pytest tests/ --cov=sage.studio --cov-report=html
+```
+
+## 🔍 Key Components
+
+### Backend (`src/sage/studio/config/backend/api.py`)
+
+- FastAPI server on port 8889
+- Endpoints: `/api/flows`, `/api/operators`, `/api/chat`
+- Integrates with SAGE kernel for pipeline execution
+
+### Services
+
+- **AgentOrchestrator** (`services/agent_orchestrator.py`): Intent classification, workflow routing
+- **PipelineBuilder** (`services/pipeline_builder.py`): Visual flow → SAGE pipeline conversion
+- **NodeRegistry** (`services/node_registry.py`): UI node → SAGE operator mapping
+
+### Frontend (`src/sage/studio/frontend/`)
+
+- React 18 + TypeScript + Vite
+- Flow editor (React Flow), Chat UI, Properties panel
+- Build: `npm run build` (output: `dist/`)
+
+## ⚠️ Common Issues
+
+### Import Errors
+
+If you see `ModuleNotFoundError: No module named 'sage_libs.sage_agentic'`:
+
+1. Check if `isage-agentic` is installed: `pip show isage-agentic`
+2. Reinstall Studio: `cd sage-studio && pip install -e .`
+3. Verify workspace paths in `sage-studio.code-workspace`
+
+### Startup Failures
+
+If `sage studio start` fails:
+
+1. Check SAGE installation: `python -c "import sage; print('OK')"`
+2. Check dependencies: `pip list | grep isage`
+3. Run quickstart: `./quickstart.sh`
+
+### Publishing Issues
+
+If `sage-pypi-publisher` fails:
+
+1. Ensure you're in the package root directory
+2. Check PyPI tokens in `~/.pypirc`
+3. Use `--test-pypi` first to verify
+
+## 📚 Documentation
+
+- **Main README**: [`README.md`](../README.md)
+- **Contributing**: [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+- **Test Chat UI**: [`docs/TEST_CHAT_UI.md`](../docs/TEST_CHAT_UI.md)
+- **SAGE Docs**: See SAGE repository
+
+## 🔄 Development Workflow
+
+1. **Before changes**: Pull latest from all dependent repos
+2. **During dev**: Run tests frequently (`pytest`)
+3. **Before commit**: `ruff check .` and `ruff format .`
+4. **After commit**: Verify CI passes
+5. **Before release**: Update version, test on TestPyPI, then publish
+
+## 🎯 When Helping with Studio
+
+1. **Understand dependencies**: Studio depends on SAGE + agentic + SIAS
+2. **Check imports**: Use correct import paths from SAGE main repo, NOT deprecated paths
+3. **Test locally**: Always test startup after changes
+4. **Document changes**: Update README if API changes
+5. **Version bumps**: Follow 4-digit semver (X.Y.Z.BUILD)
+
+## 🚫 Critical Rules
+
+### NO Backward Compatibility Code
+
+**❌ NEVER create backward compatibility layers:**
+- NO stub files for deprecated modules
+- NO try-except fallback imports
+- NO compatibility shims or adapters for old APIs
+- NO "temporary" workarounds that stay forever
+
+**✅ ALWAYS fix issues properly:**
+- Update import paths directly to correct locations
+- Fix dependency relationships at the source
+- Remove deprecated code completely
+- Document breaking changes clearly
+
+**Rationale**: Backward compatibility code creates technical debt, hides real issues, and makes debugging harder. Fix problems once, fix them right.
 
 ---
 
-**项目仓库**: 内部项目  
-**文档更新日期**: 2026-01-09  
-**维护者**: IntelliStream Team
+**Last Updated**: 2026-01-26

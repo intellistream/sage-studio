@@ -18,7 +18,7 @@ from rich.console import Console
 from rich.table import Table
 
 from sage.common.config import find_sage_project_root
-from sage.common.config.ports import SagePorts
+from sage.studio.config.ports import StudioPorts
 from sage.common.config.user_paths import get_user_paths
 
 from .studio_manager import StudioManager
@@ -43,7 +43,7 @@ class ChatModeManager(StudioManager):
         self.llm_enabled = os.getenv("SAGE_STUDIO_LLM", "true").lower() in ("true", "1", "yes")
         # Use Qwen2.5-0.5B as default - lightweight for local development
         self.llm_model = os.getenv("SAGE_STUDIO_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
-        self.llm_port = SagePorts.BENCHMARK_LLM  # Unified default port (8901)
+        self.llm_port = StudioPorts.BENCHMARK_LLM  # Unified default port (8901)
 
     # ------------------------------------------------------------------
     # Fine-tuned Model Discovery
@@ -55,7 +55,7 @@ class ChatModeManager(StudioManager):
             List of fine-tuned model info dictionaries
         """
         try:
-            from sage.libs.finetune import finetune_manager
+            from isage_finetune import finetune_manager
 
             models = []
             for task in finetune_manager.tasks.values():
@@ -141,14 +141,14 @@ class ChatModeManager(StudioManager):
 
             time.sleep(2)  # Wait for cleanup
 
-            from sage.common.config.ports import SagePorts
+            from sage.studio.config.ports import StudioPorts
             from sage.llm import LLMAPIServer, LLMServerConfig
 
             config = LLMServerConfig(
                 model=model_path,
                 backend="vllm",
                 host="0.0.0.0",
-                port=SagePorts.LLM_DEFAULT,
+                port=StudioPorts.LLM_DEFAULT,
                 gpu_memory_utilization=float(os.getenv("SAGE_STUDIO_LLM_GPU_MEMORY", "0.9")),
                 max_model_len=4096,
                 disable_log_stats=True,
@@ -244,9 +244,9 @@ class ChatModeManager(StudioManager):
         # Ports to check in order of preference
         llm_ports = [
             self.llm_port,
-            SagePorts.get_recommended_llm_port(),
-            SagePorts.LLM_DEFAULT,
-            SagePorts.BENCHMARK_LLM,
+            StudioPorts.get_recommended_llm_port(),
+            StudioPorts.LLM_DEFAULT,
+            StudioPorts.BENCHMARK_LLM,
         ]
 
         for port in llm_ports:
@@ -295,7 +295,7 @@ class ChatModeManager(StudioManager):
             return (True, env_base_url)
 
         ports_to_check = (
-            [port] if port else [SagePorts.EMBEDDING_DEFAULT, SagePorts.BENCHMARK_EMBEDDING]
+            [port] if port else [StudioPorts.EMBEDDING_DEFAULT, StudioPorts.BENCHMARK_EMBEDDING]
         )
 
         for p in ports_to_check:
@@ -407,7 +407,7 @@ class ChatModeManager(StudioManager):
         if force:
             for port in range(8901, 8911):
                 # Skip if already checked by LLMLauncher (8901 is in BENCHMARK_LLM)
-                if port == SagePorts.BENCHMARK_LLM:
+                if port == StudioPorts.BENCHMARK_LLM:
                     continue
 
                 try:
@@ -495,13 +495,13 @@ class ChatModeManager(StudioManager):
 
         Args:
             model: Embedding model name (default: config/models.json embedding or BAAI/bge-m3)
-            port: Server port (default: SagePorts.EMBEDDING_DEFAULT = 8090)
+            port: Server port (default: StudioPorts.EMBEDDING_DEFAULT = 8090)
 
         Returns:
             True if started successfully or existing service found
         """
         if port is None:
-            port = SagePorts.EMBEDDING_DEFAULT  # 8090
+            port = StudioPorts.EMBEDDING_DEFAULT  # 8090
 
         selected_model = model or self._select_embedding_model_from_config()
         model_name = selected_model or "BAAI/bge-m3"
@@ -609,7 +609,7 @@ class ChatModeManager(StudioManager):
 
         if force and not stopped:
             # Check default embedding port
-            port = SagePorts.EMBEDDING_DEFAULT  # 8090
+            port = StudioPorts.EMBEDDING_DEFAULT  # 8090
             try:
                 for conn in psutil.net_connections(kind="inet"):
                     if conn.status == "LISTEN" and conn.laddr.port == port:
@@ -655,8 +655,8 @@ class ChatModeManager(StudioManager):
 
         candidate_ports: set[int] = {
             self.gateway_port,
-            SagePorts.GATEWAY_DEFAULT,
-            SagePorts.EDGE_DEFAULT,
+            StudioPorts.GATEWAY,
+            8899,  # Edge port
         }
 
         env_port = os.environ.get("SAGE_GATEWAY_PORT")
@@ -747,8 +747,8 @@ class ChatModeManager(StudioManager):
             except Exception:
                 pass
 
-            if (not explicit_port) and gateway_port == SagePorts.GATEWAY_DEFAULT:
-                fallback_port = SagePorts.EDGE_DEFAULT
+            if (not explicit_port) and gateway_port == StudioPorts.GATEWAY:
+                fallback_port = 8899  # Try Edge port
                 console.print(
                     f"[cyan]💡 端口 {gateway_port} 被占用，自动切换 Gateway 到 {fallback_port}[/cyan]"
                 )
@@ -976,10 +976,10 @@ class ChatModeManager(StudioManager):
 
     def _find_free_llm_port(self, start_port: int, used_ports: set[int]) -> int | None:
         """Return the next available TCP port for LLM services (clamped to 8901-8910)."""
-        from sage.common.config.ports import SagePorts
+        from sage.studio.config.ports import StudioPorts
 
-        port = max(start_port, SagePorts.BENCHMARK_LLM)
-        max_port = SagePorts.BENCHMARK_LLM + 9  # 8901-8910 inclusive
+        port = max(start_port, StudioPorts.BENCHMARK_LLM)
+        max_port = StudioPorts.BENCHMARK_LLM + 9  # 8901-8910 inclusive
         while port <= max_port:
             if port not in used_ports and not self._is_port_in_use(port):
                 return port
@@ -1226,20 +1226,22 @@ class ChatModeManager(StudioManager):
 
         return success
 
-    def stop(self, stop_infrastructure: bool = False) -> bool:
+    def stop(self, stop_gateway: bool = False, stop_llm: bool = False) -> bool:
         """Stop Studio Chat Mode services.
 
         Args:
-            stop_infrastructure: If True, also stop LLM and Embedding services.
-                               If False (default), leave them running.
+            stop_gateway: If True, also stop gateway service.
+            stop_llm: If True, also stop LLM and Embedding services.
         """
-        frontend_backend = super().stop(stop_gateway=False)  # Don't stop gateway via parent
-        gateway = self._stop_gateway()
-
+        frontend_backend = super().stop(stop_gateway=False, stop_llm=False)  # Don't stop via parent
+        gateway = True
         llm = True
         embedding = True
 
-        if stop_infrastructure:
+        if stop_gateway:
+            gateway = self._stop_gateway()
+
+        if stop_llm:
             llm = self._stop_llm_service(force=True)
             embedding = self._stop_embedding_service(force=True)
         else:
@@ -1281,7 +1283,7 @@ class ChatModeManager(StudioManager):
                     llm_table.add_row("说明", "由 UnifiedInferenceClient 自动检测使用")
         else:
             llm_table.add_row("状态", "[red]未运行[/red]")
-            llm_table.add_row("端口", str(SagePorts.BENCHMARK_LLM))
+            llm_table.add_row("端口", str(StudioPorts.BENCHMARK_LLM))
             llm_table.add_row("提示", "默认启动本地服务 (除非指定 --no-llm)")
 
         console.print(llm_table)
@@ -1291,7 +1293,7 @@ class ChatModeManager(StudioManager):
         embedding_table.add_column("属性", style="cyan", width=14)
         embedding_table.add_column("值", style="white")
 
-        embedding_port = SagePorts.EMBEDDING_DEFAULT
+        embedding_port = StudioPorts.EMBEDDING_DEFAULT
         try:
             resp = requests.get(f"http://127.0.0.1:{embedding_port}/v1/models", timeout=2)
             if resp.status_code == 200:
