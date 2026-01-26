@@ -17,6 +17,46 @@
 			"path": "../sagellm"
 		},
 		{
+			"name": "sagellm-core",
+			"path": "../sagellm-core"
+		},
+		{
+			"name": "sagellm-backend",
+			"path": "../sagellm-backend"
+		},
+		{
+			"name": "sagellm-control-plane",
+			"path": "../sagellm-control-plane"
+		},
+		{
+			"name": "sagellm-gateway",
+			"path": "../sagellm-gateway"
+		},
+		{
+			"name": "sagellm-protocol",
+			"path": "../sagellm-protocol"
+		},
+		{
+			"name": "sagellm-comm",
+			"path": "../sagellm-comm"
+		},
+		{
+			"name": "sagellm-kv-cache",
+			"path": "../sagellm-kv-cache"
+		},
+		{
+			"name": "sagellm-compression",
+			"path": "../sagellm-compression"
+		},
+		{
+			"name": "sagellm-benchmark",
+			"path": "../sagellm-benchmark"
+		},
+		{
+			"name": "sagellm-docs",
+			"path": "../sagellm-docs"
+		},
+		{
 			"name": "neuromem",
 			"path": "../neuromem"
 		},
@@ -53,6 +93,15 @@
 			"${workspaceFolder:SAGE}/packages/sage-cli/src",
 			"${workspaceFolder:SAGE}/packages/sage-tools/src",
 			"${workspaceFolder:sagellm}/src",
+			"${workspaceFolder:sagellm-core}/src",
+			"${workspaceFolder:sagellm-backend}/src",
+			"${workspaceFolder:sagellm-control-plane}/src",
+			"${workspaceFolder:sagellm-gateway}/src",
+			"${workspaceFolder:sagellm-protocol}/src",
+			"${workspaceFolder:sagellm-comm}/src",
+			"${workspaceFolder:sagellm-kv-cache}/src",
+			"${workspaceFolder:sagellm-compression}/src",
+			"${workspaceFolder:sagellm-benchmark}/src",
 			"${workspaceFolder:sage-agentic}/src",
 			"${workspaceFolder:sage-sias}/src",
 			"${workspaceFolder:sage-finetune}/src"

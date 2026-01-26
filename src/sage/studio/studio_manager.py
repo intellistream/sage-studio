@@ -350,12 +350,12 @@ class StudioManager:
             return False
 
     def is_llm_running(self) -> int | None:
-        """检查 LLM 服务是否运行中
+        """检查 LLM 服务（Control Plane Gateway）是否运行中
 
         Returns:
             int: 进程 PID，如果未运行返回 None
         """
-        # 方法1: 通过端口检查（探测 LLM 服务）
+        # 方法1: 通过端口检查（探测 LLM Gateway）
         llm_ports = [8001, 8901]  # LLM_DEFAULT, BENCHMARK_LLM
 
         for port in llm_ports:
@@ -366,30 +366,29 @@ class StudioManager:
                     proxies={"http": None, "https": None}
                 )
                 if response.status_code == 200:
-                    data = response.json()
-                    # 检查是否有可用模型
-                    if data.get("data") and len(data["data"]) > 0:
-                        # 尝试找到进程 PID
-                        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-                            try:
-                                cmdline = " ".join(proc.cmdline())
-                                if "sage-llm" in cmdline or "vllm" in cmdline:
-                                    return proc.pid
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                continue
-                        return -1  # 运行中但找不到 PID
+                    # Control Plane Gateway 可能尚未注册引擎，models 为空也视为运行中
+                    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                        try:
+                            cmdline = " ".join(proc.cmdline())
+                            if (
+                                "sage-llm gateway" in cmdline
+                                or "sagellm_gateway" in cmdline
+                                or "sagellm_gateway.server" in cmdline
+                            ):
+                                return proc.pid
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                    return -1  # 运行中但找不到 PID
             except Exception:
                 continue
 
         return None
 
-    def start_llm_service(self, model: str | None = None, port: int = 8001, mock: bool = True) -> bool:
-        """启动 LLM 推理服务
+    def start_llm_service(self, port: int = 8001) -> bool:
+        """启动 LLM 推理服务（Control Plane Gateway）。
 
         Args:
-            model: 模型名称，如 "Qwen/Qwen2.5-0.5B-Instruct"
             port: 服务端口
-            mock: 是否使用 mock 模式（CPU，无需 GPU）
 
         Returns:
             bool: 是否启动成功
@@ -403,21 +402,12 @@ class StudioManager:
                 console.print(f"[green]✅ LLM 服务已在运行中 (PID: {existing_pid})[/green]")
             return True
 
-        # 默认使用小模型用于测试
-        if model is None:
-            model = "sshleifer/tiny-gpt2"
-
-        mode_str = "Mock (CPU)" if mock else "Full"
-        console.print(f"[blue]🚀 启动 LLM 服务 ({mode_str} 模式)...[/blue]")
-        console.print(f"   模型: {model}")
+        console.print("[blue]🚀 启动 LLM 服务（Control Plane Gateway）...[/blue]")
         console.print(f"   端口: {port}")
 
         try:
-            # 构建启动命令 - 使用 sagellm-gateway
-            cmd = ["python", "-m", "sagellm_gateway.server", "--host", "0.0.0.0", "--port", str(port)]
-
-            if mock:
-                cmd.append("--mock")
+            # 构建启动命令 - 使用 sagellm 主仓库入口（Control Plane）
+            cmd = ["sage-llm", "gateway", "--host", "0.0.0.0", "--port", str(port)]
 
             # 后台启动
             log_file = Path("/tmp/sage-studio-llm.log")
@@ -1340,7 +1330,7 @@ if __name__ == "__main__":
                 if not self.start_llm_service():
                     console.print("[yellow]⚠️  LLM 服务启动失败，Chat 模式可能无法使用[/yellow]")
                     console.print(
-                        "[yellow]   您可以稍后手动启动: python -m sagellm_gateway.server --mock --port 8001[/yellow]"
+                        "[yellow]   您可以稍后手动启动: sage-llm gateway --port 8001[/yellow]"
                     )
             else:
                 if llm_pid == -1:
