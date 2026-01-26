@@ -100,11 +100,16 @@ if [ "$DEV_MODE" = true ]; then
         pip install -e "$PARENT_DIR/sage-sias"
     fi
 
-    # Install SAGE if available
+    # Install SAGE if available (dev mode only installs packages, no build)
     if [ -d "$PARENT_DIR/SAGE/packages" ]; then
         echo -e "${CYAN}  → Installing SAGE packages from local source${NC}"
-        cd "$PARENT_DIR/SAGE" && ./quickstart.sh --dev --yes || echo -e "${YELLOW}⚠ SAGE installation skipped${NC}"
-        cd "$PROJECT_ROOT"
+        # Install core SAGE packages directly without running quickstart
+        for pkg in sage-common sage-platform sage-kernel sage-libs sage-middleware; do
+            if [ -d "$PARENT_DIR/SAGE/packages/$pkg" ]; then
+                echo -e "${BLUE}    Installing $pkg...${NC}"
+                pip install -e "$PARENT_DIR/SAGE/packages/$pkg" --no-deps 2>/dev/null || echo -e "${YELLOW}    ⚠ $pkg not found, skipping${NC}"
+            fi
+        done
     fi
 
     # Install studio itself in dev mode

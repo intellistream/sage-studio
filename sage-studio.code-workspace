@@ -73,6 +73,10 @@
 			"path": "../sage-agentic"
 		},
 		{
+			"name": "sage-intent",
+			"path": "../sage-intent"
+		},
+		{
 			"name": "sage-sias",
 			"path": "../sage-sias"
 		},
@@ -103,6 +107,7 @@
 			"${workspaceFolder:sagellm-compression}/src",
 			"${workspaceFolder:sagellm-benchmark}/src",
 			"${workspaceFolder:sage-agentic}/src",
+			"${workspaceFolder:sage-intent}/src",
 			"${workspaceFolder:sage-sias}/src",
 			"${workspaceFolder:sage-finetune}/src"
 		],
