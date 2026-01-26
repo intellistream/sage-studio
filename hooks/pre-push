@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pre-push hook managed by sage-pypi-publisher
+# Pre-push hook for sage-studio
 # Auto-detects version updates and offers to build/upload to PyPI
 
 set -e
@@ -35,9 +35,6 @@ except Exception:
     sys.exit(2)
 PY
         return $?
-    elif command -v curl &> /dev/null; then
-        curl -fsSL "https://pypi.org/pypi/${PACKAGE_NAME}/json" | grep -q "\"${CURRENT_VERSION}\""
-        return $?
     else
         return 2
     fi
@@ -64,9 +61,11 @@ done
 
 if [ "$VERSION_UPDATED" = true ]; then
     echo -e "${GREEN}✓ Version updated to ${CURRENT_VERSION}${NC}"
+
     PYPI_CHECK_RESULT=0
     check_pypi_version_exists
     PYPI_CHECK_RESULT=$?
+
     if [ "$PYPI_CHECK_RESULT" -eq 0 ]; then
         echo -e "${YELLOW}⚠ ${PACKAGE_NAME} ${CURRENT_VERSION} already exists on PyPI${NC}"
         echo -e "${BLUE}What would you like to do?${NC}"
@@ -83,12 +82,12 @@ if [ "$VERSION_UPDATED" = true ]; then
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo -e "${YELLOW}Current: ${BLUE}${CURRENT_VERSION}${NC}"
             echo ""
-            echo -e "${GREEN}Enter new version (e.g., 0.1.7, 1.0.0):${NC}"
+            echo -e "${GREEN}Enter new version (e.g., 0.2.1, 1.0.0):${NC}"
             echo -n "New version: "
             read -r new_version </dev/tty
 
-            if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9._-]+)?$ ]]; then
-                echo -e "${RED}✗ Invalid format. Expected: X.Y.Z${NC}"
+            if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+                echo -e "${RED}✗ Invalid format. Expected: X.Y.Z or X.Y.Z.N${NC}"
                 exit 1
             fi
 
@@ -104,12 +103,9 @@ if [ "$VERSION_UPDATED" = true ]; then
             exit 1
         fi
     elif [ "$PYPI_CHECK_RESULT" -eq 2 ]; then
-        if [ "$PACKAGE_NAME" = "unknown" ]; then
-            echo -e "${YELLOW}⚠ Unable to check PyPI (missing package name in pyproject.toml)${NC}"
-        else
-            echo -e "${YELLOW}⚠ Unable to check PyPI for existing version (missing python3/curl or network issue)${NC}"
-        fi
+        echo -e "${YELLOW}⚠ Unable to check PyPI (network issue or missing python3)${NC}"
     fi
+
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}📦 Build and upload version ${CURRENT_VERSION} to PyPI?${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -121,14 +117,14 @@ if [ "$VERSION_UPDATED" = true ]; then
 
     if [[ "$response" =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}🔨 Building package...${NC}"
-        rm -rf dist/ wheelhouse/ 2>/dev/null || true
+        rm -rf dist/ build/ *.egg-info 2>/dev/null || true
 
         if command -v sage-pypi-publisher &> /dev/null; then
-            echo -e "${GREEN}Using sage-pypi-publisher (auto-detects build type)...${NC}"
+            echo -e "${GREEN}Using sage-pypi-publisher...${NC}"
             if sage-pypi-publisher build . --upload --no-dry-run; then
                 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
                 echo -e "${GREEN}✓ Successfully uploaded ${CURRENT_VERSION} to PyPI${NC}"
-                echo -e "${GREEN}🔗 https://pypi.org/project/isage-vdb/${CURRENT_VERSION}/${NC}"
+                echo -e "${GREEN}🔗 https://pypi.org/project/${PACKAGE_NAME}/${CURRENT_VERSION}/${NC}"
                 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             else
                 echo -e "${RED}✗ Failed to upload to PyPI${NC}"
@@ -138,7 +134,7 @@ if [ "$VERSION_UPDATED" = true ]; then
             fi
         else
             echo -e "${YELLOW}⚠ sage-pypi-publisher not found${NC}"
-            echo -e "${YELLOW}Install: pip install sage-pypi-publisher${NC}"
+            echo -e "${YELLOW}Install: pip install isage-pypi-publisher${NC}"
             echo -e "${YELLOW}Continue push? [y/N]${NC}"
             read -r cont </dev/tty
             [[ ! "$cont" =~ ^[Yy]$ ]] && exit 1
@@ -169,12 +165,12 @@ else
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${YELLOW}Current: ${BLUE}${CURRENT_VERSION}${NC}"
         echo ""
-        echo -e "${GREEN}Enter new version (e.g., 0.1.4, 1.0.0):${NC}"
+        echo -e "${GREEN}Enter new version (e.g., 0.2.1, 1.0.0):${NC}"
         echo -n "New version: "
         read -r new_version </dev/tty
 
-        if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9._-]+)?$ ]]; then
-            echo -e "${RED}✗ Invalid format. Expected: X.Y.Z${NC}"
+        if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo -e "${RED}✗ Invalid format. Expected: X.Y.Z or X.Y.Z.N${NC}"
             exit 1
         fi
 
@@ -189,7 +185,7 @@ else
         read -r upload_resp </dev/tty
 
         if [[ "$upload_resp" =~ ^[Yy]$ ]]; then
-            rm -rf dist/ wheelhouse/ 2>/dev/null || true
+            rm -rf dist/ build/ *.egg-info 2>/dev/null || true
             if command -v sage-pypi-publisher &> /dev/null; then
                 sage-pypi-publisher build . --upload --no-dry-run
                 echo -e "${GREEN}✓ Uploaded ${new_version} to PyPI${NC}"
