@@ -481,68 +481,87 @@ class StudioManager:
                     start_new_session=True
                 )
             
-            # 等待引擎启动并注册到 Gateway（最多60秒，因为模型加载可能较慢）
+            # 等待引擎启动并注册到 Gateway
+            # CPU 模型加载较慢（0.5B ~10s, 1.5B ~30s），给 120s
+            max_wait = 120
             engine_id = f"studio-engine-{default_model.replace('/', '-')}"
             register_url = f"http://localhost:{gateway_port}/v1/management/engines/register"
-            
+            deregister_url = f"http://localhost:{gateway_port}/v1/management/engines/{engine_id}"
+
             console.print(f"   等待引擎就绪并注册到 Gateway (端口 {gateway_port})...")
-            
-            for i in range(60):
+
+            # 先清理旧的同名注册（避免 stale ERROR 状态干扰）
+            try:
+                requests.delete(deregister_url, timeout=2, proxies={"http": None, "https": None})
+            except Exception:
+                pass
+
+            engine_healthy = False
+            for i in range(max_wait):
                 time.sleep(1)
-                
-                # 每3秒尝试一次注册
-                if (i + 1) % 3 == 0:
-                    try:
-                        # 首先检查引擎健康端点
-                        engine_health = requests.get(
-                            f"http://localhost:{engine_port}/health",
-                            timeout=1,
-                            proxies={"http": None, "https": None}
+
+                # 每 3 秒检查一次引擎健康
+                if (i + 1) % 3 != 0:
+                    continue
+
+                try:
+                    engine_health = requests.get(
+                        f"http://localhost:{engine_port}/health",
+                        timeout=2,
+                        proxies={"http": None, "https": None},
+                    )
+                    if engine_health.status_code != 200:
+                        if (i + 1) % 15 == 0:
+                            console.print(f"[yellow]   引擎加载中... ({i + 1}s)[/yellow]")
+                        continue
+                except requests.ConnectionError:
+                    if (i + 1) % 15 == 0:
+                        console.print(f"[yellow]   引擎加载中... ({i + 1}s)[/yellow]")
+                    continue
+                except Exception:
+                    continue
+
+                # 引擎就绪，尝试注册到 Gateway
+                if not engine_healthy:
+                    console.print(f"   [green]✓[/green] 引擎就绪 (耗时 {i + 1}s)")
+                    engine_healthy = True
+
+                register_payload = {
+                    "engine_id": engine_id,
+                    "model_id": default_model,
+                    "host": "localhost",
+                    "port": engine_port,
+                    "engine_kind": "llm",
+                    "metadata": {"source": "studio_startup", "model": default_model},
+                }
+
+                try:
+                    register_response = requests.post(
+                        register_url,
+                        json=register_payload,
+                        timeout=5,
+                        proxies={"http": None, "https": None},
+                    )
+                    if register_response.status_code in [200, 201]:
+                        console.print(f"[green]✅ 引擎已注册到 Gateway: {engine_id}[/green]")
+                        console.print(f"   引擎端口: {engine_port}, Gateway端口: {gateway_port}")
+                        return True
+                    else:
+                        console.print(
+                            f"[yellow]   注册响应: {register_response.status_code} - "
+                            f"{register_response.text[:100]}[/yellow]"
                         )
-                        
-                        if engine_health.status_code == 200:
-                            # 引擎就绪，尝试注册到 Gateway
-                            register_payload = {
-                                "engine_id": engine_id,
-                                "model_id": default_model,
-                                "host": "localhost",
-                                "port": engine_port,
-                                "engine_kind": "llm",
-                                "metadata": {"source": "studio_startup", "model": default_model},
-                            }
-                            
-                            register_response = requests.post(
-                                register_url,
-                                json=register_payload,
-                                timeout=2,
-                                proxies={"http": None, "https": None}
-                            )
-                            
-                            if register_response.status_code in [200, 201]:
-                                console.print(f"[green]✅ 引擎已注册到 Gateway: {engine_id}[/green]")
-                                console.print(f"   引擎端口: {engine_port}")
-                                console.print(f"   Gateway端口: {gateway_port}")
-                                console.print(f"   引擎日志: {engine_log}")
-                                return True
-                            else:
-                                # 注册失败，打印详情
-                                if i % 9 == 0:  # 每9秒打印一次错误（避免刷屏）
-                                    console.print(f"[yellow]   注册响应: {register_response.status_code} - {register_response.text[:100]}[/yellow]")
-                    except requests.Timeout:
-                        if i % 9 == 0:
-                            console.print(f"[yellow]   等待引擎就绪... ({i + 1}s)[/yellow]")
-                    except requests.ConnectionError:
-                        # 引擎还未就绪，继续等待
-                        if i % 9 == 0:
-                            console.print(f"[yellow]   等待引擎就绪... ({i + 1}s)[/yellow]")
-                    except Exception as e:
-                        # 其他错误
-                        if i % 9 == 0:
-                            console.print(f"[yellow]   注册出错: {str(e)[:50]}[/yellow]")
-            
-            console.print("[yellow]⚠️  引擎注册超时，可能仍在后台加载[/yellow]")
+                except Exception as e:
+                    console.print(f"[yellow]   注册请求失败: {e}[/yellow]")
+
+            # 超时处理：引擎已就绪但注册失败 → 仍算部分成功
+            if engine_healthy:
+                console.print("[yellow]⚠️  引擎已就绪但 Gateway 注册失败[/yellow]")
+                console.print(f"   引擎仍可在 http://localhost:{engine_port} 使用")
+                return True
+
+            console.print("[yellow]⚠️  引擎启动超时，可能仍在后台加载[/yellow]")
             console.print(f"   请检查日志: {engine_log}")
-            console.print(f"[yellow]   如需手动注册，请使用Gateway端口 {gateway_port}[/yellow]")
             return False
             
         except Exception as e:
