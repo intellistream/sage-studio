@@ -58,7 +58,8 @@ class StudioManager:
 
         # React + Vite 默认端口是 5173
         self.default_port = StudioPorts.FRONTEND
-        self.backend_port = StudioPorts.BACKEND  # Studio backend API
+        # 支持环境变量覆盖后端端口（避免冲突）
+        self.backend_port = int(os.environ.get("STUDIO_BACKEND_PORT", str(StudioPorts.BACKEND)))
         # Allow env override for gateway port; fallback logic handled in _start_gateway
         self.gateway_port = int(os.environ.get("SAGE_GATEWAY_PORT", str(StudioPorts.GATEWAY)))
         self.default_host = "0.0.0.0"  # 修改为监听所有网络接口
@@ -216,21 +217,22 @@ class StudioManager:
     def is_gateway_running(self) -> int | None:
         """检查 Gateway 是否运行中
 
-        Note: Gateway 现在由 `sage gateway` 命令管理，PID 文件位于 ~/.sage/gateway/gateway.pid
+        Returns:
+            int: 进程 PID
+            -1: 服务在运行但无法确定 PID（外部启动）
+            None: 服务未运行
         """
-        # Gateway CLI 的 PID 文件位置
-        gateway_cli_pid_file = Path.home() / ".sage" / "gateway" / "gateway.pid"
-
-        # 方法1: 检查 Gateway CLI 的 PID 文件
-        if gateway_cli_pid_file.exists():
+        # 方法1: 检查 Studio 自己的 PID 文件
+        if self.gateway_pid_file.exists():
             try:
-                with open(gateway_cli_pid_file) as f:
+                with open(self.gateway_pid_file) as f:
                     pid = int(f.read().strip())
 
                 if psutil.pid_exists(pid):
                     return pid
 
-                # PID 文件存在但进程不存在（不清理，让 sage gateway 自己管理）
+                # PID 文件存在但进程不存在，清理文件
+                self.gateway_pid_file.unlink()
             except Exception:
                 pass
 
@@ -246,7 +248,7 @@ class StudioManager:
                 for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                     try:
                         cmdline = " ".join(proc.cmdline())
-                        if "isagellm.gateway" in cmdline or "sage-gateway" in cmdline:
+                        if "sagellm-gateway" in cmdline or "sagellm_gateway" in cmdline:
                             return proc.pid
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
@@ -273,45 +275,38 @@ class StudioManager:
         console.print(f"[blue]🚀 启动 Gateway 服务 ({host}:{port})...[/blue]")
 
         try:
-            # 使用 sage gateway start 命令（这是正确的 SAGE Gateway CLI）
+            # 使用 sagellm-gateway 命令（来自 isagellm-gateway 包）
             cmd = [
-                "sage",
-                "gateway",
-                "start",
+                "sagellm-gateway",
                 "--host",
                 host,
                 "--port",
                 str(port),
-                "--background",  # 后台运行
             ]
 
-            # 执行启动命令（sage gateway start 会自动管理日志和 PID）
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=35,  # sage gateway start 会等待最多 30 秒
-            )
+            # 后台启动
+            with open(self.gateway_log_file, "w") as f:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
 
-            if result.returncode != 0:
-                console.print(f"[red]❌ Gateway 启动失败: {result.stderr}[/red]")
-                return False
+            # 保存 PID
+            with open(self.gateway_pid_file, "w") as f:
+                f.write(str(process.pid))
 
-            # sage gateway start 会自动管理 PID 和健康检查
-            # 这里只需要验证一下
-            existing_pid = self.is_gateway_running()
-            if existing_pid:
-                console.print(f"[green]✅ Gateway 启动成功 (PID: {existing_pid})[/green]")
-                return True
-            else:
-                console.print("[yellow]⚠️  Gateway 启动命令执行成功，但进程未运行[/yellow]")
-                return False
+            # 等待服务启动（最多10秒）
+            for _ in range(20):
+                time.sleep(0.5)
+                if self.is_gateway_running():
+                    console.print(f"[green]✅ Gateway 启动成功 (PID: {process.pid})[/green]")
+                    console.print(f"   日志: {self.gateway_log_file}")
+                    return True
 
-        except subprocess.TimeoutExpired:
-            console.print("[red]❌ Gateway 启动超时[/red]")
-            return False
-        except Exception as e:
-            console.print(f"[red]❌ Gateway 启动失败: {e}[/red]")
+            console.print("[yellow]⚠️  Gateway 启动命令执行成功，但未能在10秒内探测到服务[/yellow]")
+            console.print(f"   请检查日志: {self.gateway_log_file}")
             return False
 
         except Exception as e:
@@ -385,56 +380,414 @@ class StudioManager:
         return None
 
     def start_llm_service(self, port: int = 8001) -> bool:
-        """启动 LLM 推理服务（Control Plane Gateway）。
+        """启动 LLM 推理服务（仅启动引擎，Gateway由start_gateway()单独启动）。
 
         Args:
-            port: 服务端口
+            port: Gateway 端口（用于引擎注册）
 
         Returns:
             bool: 是否启动成功
         """
-        # 检查是否已经运行
-        existing_pid = self.is_llm_running()
-        if existing_pid:
-            if existing_pid == -1:
-                console.print("[green]✅ LLM 服务已在运行中（外部启动）[/green]")
-            else:
-                console.print(f"[green]✅ LLM 服务已在运行中 (PID: {existing_pid})[/green]")
-            return True
+        # 直接启动默认引擎（Gateway已由start_gateway()启动）
+        console.print(f"[blue]🚀 启动 LLM 引擎（将注册到 Gateway {port}）...[/blue]")
+        return self._start_default_engine(port)
 
-        console.print("[blue]🚀 启动 LLM 服务（Control Plane Gateway）...[/blue]")
-        console.print(f"   端口: {port}")
-
+    def _start_default_engine(self, gateway_port: int = 8889) -> bool:
+        """启动默认 LLM 引擎并注册到 Gateway Control Plane
+        
+        Args:
+            gateway_port: Gateway 端口（用于注册）
+            
+        Returns:
+            bool: 是否启动成功
+        """
+        # 从环境变量或使用默认模型（改为 1.5B，更好的推理能力）
+        default_model = os.getenv("SAGE_DEFAULT_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+        
+        console.print(f"[blue]🔧 启动默认 LLM 引擎: {default_model}...[/blue]")
+        console.print("   (使用 sageLLM CPU Backend，轻量且高效)")
+        
         try:
-            # 构建启动命令 - 使用 sagellm 主仓库入口（Control Plane）
-            cmd = ["sage-llm", "gateway", "--host", "0.0.0.0", "--port", str(port)]
-
-            # 后台启动
-            log_file = Path("/tmp/sage-studio-llm.log")
-            with open(log_file, "w") as f:
-                process = subprocess.Popen(
-                    cmd,
+            # 使用 sage-llm serve-engine 命令启动引擎
+            # 端口使用 9001，避免与 Gateway 冲突
+            engine_port = 9001
+            
+            # 🔧 FIX: 检查端口是否被占用（防御性编程）
+            if self._is_port_in_use(engine_port):
+                console.print(f"[yellow]⚠️  端口 {engine_port} 已被占用，尝试停止旧引擎...[/yellow]")
+                if not self._kill_process_on_port(engine_port):
+                    console.print(f"[red]❌ 无法清理端口 {engine_port}[/red]")
+                    return False
+                # 等待端口释放
+                time.sleep(2)
+            
+            # ✨ NEW: 使用 sageLLM Core API 直接启动 CPU backend
+            engine_log = Path("/tmp/sage-studio-engine.log")
+            console.print("   [dim]使用 sageLLM Core CPU backend...[/dim]")
+            
+            # 创建启动脚本（使用 sageLLM Core API）
+            engine_script = self._create_sagellm_cpu_engine_script(default_model, engine_port, engine_log)
+            
+            # 后台启动引擎
+            with open(engine_log, "w") as f:
+                subprocess.Popen(
+                    [sys.executable, str(engine_script)],
                     stdout=f,
                     stderr=subprocess.STDOUT,
                     start_new_session=True
                 )
-
-            # 等待服务启动（最多10秒）
-            import time
-            for _ in range(20):
-                time.sleep(0.5)
-                if self.is_llm_running():
-                    console.print(f"[green]✅ LLM 服务启动成功 (PID: {process.pid})[/green]")
-                    console.print(f"   日志: {log_file}")
-                    return True
-
-            console.print("[yellow]⚠️  LLM 服务启动命令执行成功，但未能在10秒内探测到服务[/yellow]")
-            console.print(f"   请检查日志: {log_file}")
+            
+            # 等待引擎启动并注册到 Gateway（最多60秒，因为模型加载可能较慢）
+            engine_id = f"studio-engine-{default_model.replace('/', '-')}"
+            register_url = f"http://localhost:{gateway_port}/v1/management/engines/register"
+            
+            console.print(f"   等待引擎就绪并注册到 Gateway (端口 {gateway_port})...")
+            
+            for i in range(60):
+                time.sleep(1)
+                
+                # 每3秒尝试一次注册
+                if (i + 1) % 3 == 0:
+                    try:
+                        # 首先检查引擎健康端点
+                        engine_health = requests.get(
+                            f"http://localhost:{engine_port}/health",
+                            timeout=1,
+                            proxies={"http": None, "https": None}
+                        )
+                        
+                        if engine_health.status_code == 200:
+                            # 引擎就绪，尝试注册到 Gateway
+                            register_payload = {
+                                "engine_id": engine_id,
+                                "model_id": default_model,
+                                "host": "localhost",
+                                "port": engine_port,
+                                "engine_kind": "llm",
+                                "metadata": {"source": "studio_startup", "model": default_model},
+                            }
+                            
+                            register_response = requests.post(
+                                register_url,
+                                json=register_payload,
+                                timeout=2,
+                                proxies={"http": None, "https": None}
+                            )
+                            
+                            if register_response.status_code in [200, 201]:
+                                console.print(f"[green]✅ 引擎已注册到 Gateway: {engine_id}[/green]")
+                                console.print(f"   引擎端口: {engine_port}")
+                                console.print(f"   Gateway端口: {gateway_port}")
+                                console.print(f"   引擎日志: {engine_log}")
+                                return True
+                            else:
+                                # 注册失败，打印详情
+                                if i % 9 == 0:  # 每9秒打印一次错误（避免刷屏）
+                                    console.print(f"[yellow]   注册响应: {register_response.status_code} - {register_response.text[:100]}[/yellow]")
+                    except requests.Timeout:
+                        if i % 9 == 0:
+                            console.print(f"[yellow]   等待引擎就绪... ({i + 1}s)[/yellow]")
+                    except requests.ConnectionError:
+                        # 引擎还未就绪，继续等待
+                        if i % 9 == 0:
+                            console.print(f"[yellow]   等待引擎就绪... ({i + 1}s)[/yellow]")
+                    except Exception as e:
+                        # 其他错误
+                        if i % 9 == 0:
+                            console.print(f"[yellow]   注册出错: {str(e)[:50]}[/yellow]")
+            
+            console.print("[yellow]⚠️  引擎注册超时，可能仍在后台加载[/yellow]")
+            console.print(f"   请检查日志: {engine_log}")
+            console.print(f"[yellow]   如需手动注册，请使用Gateway端口 {gateway_port}[/yellow]")
             return False
-
+            
         except Exception as e:
-            console.print(f"[red]❌ LLM 服务启动失败: {e}[/red]")
+            console.print(f"[red]❌ 启动默认引擎失败: {e}[/red]")
+            console.print("[yellow]💡 您可以手动启动引擎:[/yellow]")
+            console.print(f"   python -c 'from sagellm_core import LLMEngine, LLMEngineConfig; ...'")
             return False
+
+    def _create_sagellm_cpu_engine_script(self, model: str, port: int, log_file: Path) -> Path:
+        """创建 sageLLM CPU engine 启动脚本
+        
+        Args:
+            model: 模型路径
+            port: 服务端口
+            log_file: 日志文件路径
+            
+        Returns:
+            脚本文件路径
+        """
+        user_paths = get_user_paths()
+        script_path = user_paths.cache_dir / "studio" / "start_cpu_engine.py"
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # 生成启动脚本（基于用户验证的 test_qwen_1_5b_cpu.py + FastAPI 服务器）
+        script_content = f'''#!/usr/bin/env python3
+"""sageLLM CPU Engine for SAGE Studio - HTTP Server
+
+Auto-generated script to start CPU-based LLM engine with OpenAI-compatible API.
+"""
+import asyncio
+import sys
+from pathlib import Path
+from typing import List, Optional, Any
+
+try:
+    from sagellm_protocol.types import Request as SageLLMRequest
+    from sagellm_core import LLMEngine, LLMEngineConfig
+    from fastapi import FastAPI, HTTPException
+    from fastapi.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel
+    import uvicorn
+except ImportError as e:
+    print(f"Error: Missing dependencies: {{e}}", file=sys.stderr)
+    print("Install: pip install sagellm-core sagellm-protocol fastapi uvicorn", file=sys.stderr)
+    sys.exit(1)
+
+
+# OpenAI-compatible API models
+class Message(BaseModel):
+    role: str
+    content: str
+
+class ChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[Message]
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = 512
+    stream: Optional[bool] = False
+
+class Choice(BaseModel):
+    index: int
+    message: Message
+    finish_reason: str
+
+class Usage(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+class ChatCompletionResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: List[Choice]
+    usage: Usage
+
+
+# Global engine instance
+engine: Optional[LLMEngine] = None
+model_name = "{model}"
+
+
+async def initialize_engine():
+    """Initialize the LLM engine."""
+    global engine
+    
+    print(f"🚀 Starting sageLLM CPU Engine...")
+    print(f"   Model: {{model_name}}")
+    print(f"   Backend: CPU")
+    
+    try:
+        config = LLMEngineConfig(
+            model_path=model_name,
+            backend_type="cpu",
+            max_new_tokens=512,
+            dtype="bfloat16",
+            trust_remote_code=True,
+        )
+        
+        engine = LLMEngine(config)
+        await engine.start()
+        
+        print(f"✅ Engine initialized successfully")
+        
+    except Exception as e:
+        print(f"❌ Engine initialization failed: {{e}}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+# FastAPI app
+app = FastAPI(title="sageLLM CPU Engine", version="1.0.0")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Startup event handler."""
+    await initialize_engine()
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {{"status": "ok", "model": model_name, "backend": "cpu"}}
+
+
+@app.get("/v1/models")
+async def list_models():
+    """List available models (OpenAI-compatible)."""
+    return {{
+        "object": "list",
+        "data": [
+            {{
+                "id": model_name,
+                "object": "model",
+                "owned_by": "sage-studio",
+                "permission": []
+            }}
+        ]
+    }}
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(request: ChatCompletionRequest):
+    """Chat completions endpoint (OpenAI-compatible) with streaming support."""
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Engine not initialized")
+    
+    try:
+        import time as time_module
+        import uuid
+        import json
+        from fastapi.responses import StreamingResponse
+        from sagellm_protocol.types import ChatMessage as SageChatMessage
+        
+        request_id = f"chatcmpl-{{int(time_module.time())}}"
+        
+        # Reduce max_tokens for faster response on CPU
+        max_tokens = min(request.max_tokens or 50, 50)
+        
+        # Convert to sagellm ChatMessage list — engine handles chat template
+        sage_messages = [
+            SageChatMessage(role=msg.role, content=msg.content)
+            for msg in request.messages
+        ]
+        
+        # Streaming response
+        if request.stream:
+            async def generate_stream():
+                llm_request = SageLLMRequest(
+                    request_id=str(uuid.uuid4()),
+                    trace_id=str(uuid.uuid4()),
+                    model=model_name,
+                    messages=sage_messages,
+                    max_tokens=max_tokens,
+                    temperature=request.temperature or 0.7,
+                    stream=True,
+                )
+                
+                try:
+                    async for chunk in engine.stream(llm_request):
+                        # StreamEventDelta and StreamEventEnd both have .content
+                        # Only yield delta events (event="delta"), skip end to avoid duplication
+                        text = getattr(chunk, 'content', None) if getattr(chunk, 'event', None) == 'delta' else None
+                        if text:
+                            chunk_data = {{
+                                "id": request_id,
+                                "object": "chat.completion.chunk",
+                                "created": int(time_module.time()),
+                                "model": model_name,
+                                "choices": [{{
+                                    "index": 0,
+                                    "delta": {{"content": text}},
+                                    "finish_reason": None
+                                }}]
+                            }}
+                            yield f"data: {{json.dumps(chunk_data)}}\\n\\n"
+                    
+                    # Send final chunk
+                    final_chunk = {{
+                        "id": request_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time_module.time()),
+                        "model": model_name,
+                        "choices": [{{
+                            "index": 0,
+                            "delta": {{}},
+                            "finish_reason": "stop"
+                        }}]
+                    }}
+                    yield f"data: {{json.dumps(final_chunk)}}\\n\\n"
+                    yield "data: [DONE]\\n\\n"
+                    
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    error_data = {{"error": str(e)}}
+                    yield f"data: {{json.dumps(error_data)}}\\n\\n"
+            
+            return StreamingResponse(generate_stream(), media_type="text/event-stream")
+        
+        # Non-streaming response
+        llm_request = SageLLMRequest(
+            request_id=str(uuid.uuid4()),
+            trace_id=str(uuid.uuid4()),
+            model=model_name,
+            messages=sage_messages,
+            max_tokens=max_tokens,
+            temperature=request.temperature or 0.7,
+            stream=False,
+        )
+        
+        response = await engine.execute(llm_request)
+        output_text = response.output_text
+        
+        # Format OpenAI-compatible response
+        return ChatCompletionResponse(
+            id=request_id,
+            created=int(time_module.time()),
+            model=request.model,
+            choices=[
+                Choice(
+                    index=0,
+                    message=Message(role="assistant", content=output_text.strip()),
+                    finish_reason="stop"
+                )
+            ],
+            usage=Usage(
+                prompt_tokens=len(output_text.split()),
+                completion_tokens=len(output_text.split()),
+                total_tokens=len(output_text.split()) * 2
+            )
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    port = {port}
+    print(f"   Starting HTTP server on http://0.0.0.0:{{port}}")
+    print(f"   Press Ctrl+C to stop")
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
+'''
+        
+        with open(script_path, "w") as f:
+            f.write(script_content)
+        
+        script_path.chmod(0o755)
+        return script_path
 
     def stop_llm_service(self) -> bool:
         """停止 LLM 服务"""
@@ -1116,25 +1469,27 @@ if __name__ == "__main__":
         config = self.load_config()
         backend_port = port or config.get("backend_port", self.backend_port)
 
+        # 🆕 智能端口选择：如果默认端口被占用，自动尝试其他端口
+        alternative_ports = [backend_port, 8081, 8082, 8083, 8888, 8090]
+        selected_port = None
+        
+        for try_port in alternative_ports:
+            if not self._is_port_in_use(try_port):
+                selected_port = try_port
+                if try_port != backend_port:
+                    console.print(f"[yellow]端口 {backend_port} 被占用，自动切换到端口 {try_port}[/yellow]")
+                break
+        
+        if selected_port is None:
+            console.print(f"[red]❌ 无法找到可用端口（尝试了: {alternative_ports}）[/red]")
+            console.print("[yellow]💡 提示：可以设置环境变量 STUDIO_BACKEND_PORT 指定端口[/yellow]")
+            return False
+        
+        backend_port = selected_port
+
         # 更新配置
         config["backend_port"] = backend_port
         self.save_config(config)
-
-        # 检查端口是否被占用（可能是僵尸进程或其他服务）
-        if self._is_port_in_use(backend_port):
-            console.print(f"[yellow]⚠️  端口 {backend_port} 被占用，尝试释放...[/yellow]")
-            self._kill_process_on_port(backend_port)
-            # 等待端口释放
-            import time
-
-            for _ in range(5):
-                time.sleep(1)
-                if not self._is_port_in_use(backend_port):
-                    console.print(f"[green]✅ 端口 {backend_port} 已释放[/green]")
-                    break
-            else:
-                console.print(f"[red]❌ 无法释放端口 {backend_port}，请手动检查[/red]")
-                return False
 
         console.print(f"[blue]正在启动后端API (端口: {backend_port})...[/blue]")
 
@@ -1327,10 +1682,11 @@ if __name__ == "__main__":
             llm_pid = self.is_llm_running()
             if not llm_pid:
                 console.print("[blue]🔍 检测到 LLM 服务未运行，正在启动...[/blue]")
-                if not self.start_llm_service():
+                # 传入Gateway端口，让引擎注册到正确的Control Plane
+                if not self.start_llm_service(port=self.gateway_port):
                     console.print("[yellow]⚠️  LLM 服务启动失败，Chat 模式可能无法使用[/yellow]")
                     console.print(
-                        "[yellow]   您可以稍后手动启动: sage-llm gateway --port 8001[/yellow]"
+                        f"[yellow]   您可以稍后手动启动: sage-llm serve-engine --port 9001[/yellow]"
                     )
             else:
                 if llm_pid == -1:
@@ -1338,7 +1694,17 @@ if __name__ == "__main__":
                 else:
                     console.print(f"[green]✅ LLM 服务已在运行中 (PID: {llm_pid})[/green]")
 
-        # 后端 API 已合并进 Gateway，不再单独启动
+        # 启动后端API服务（独立运行，因为需要完整的 SAGE 框架能力）
+        # Studio 后端不仅提供认证，还需要：
+        # - Pipeline Builder & Operators Registry
+        # - Jobs Management & Execution
+        # - Dataset Management & File Upload
+        # 这些都是 SAGE 框架层面的功能，不应该合并到 sageLLM Gateway
+        backend_startup_success = self.start_backend(port=backend_port)
+        if not backend_startup_success:
+            console.print("[yellow]⚠️  后端API启动失败，某些功能可能无法使用[/yellow]")
+            console.print("[yellow]   注意：Studio 需要独立的后端来管理 SAGE pipelines 和组件[/yellow]")
+            console.print("[yellow]   如果端口冲突，可以设置环境变量: STUDIO_BACKEND_PORT=8081[/yellow]")
 
         # 🆕 智能端口冲突解决 (Smart Port Conflict Resolution)
         # 解决场景：配置文件中保存了旧端口 (如 5173)，但该端口被其他服务占用 (如 Prod 环境)，

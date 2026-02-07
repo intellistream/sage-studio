@@ -73,16 +73,11 @@
 			"path": "../sage-agentic"
 		},
 		{
-			"name": "sage-intent",
-			"path": "../sage-intent"
-		},
-		{
-			"name": "sage-sias",
-			"path": "../sage-sias"
-		},
-		{
 			"name": "sage-finetune",
 			"path": "../sage-finetune"
+		},
+		{
+			"path": "../sagellm-control-plane-benchmark"
 		}
 	],
 	"settings": {

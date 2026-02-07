@@ -4,6 +4,7 @@ SAGE Studio Backend API
 A simple FastAPI backend service that provides real SAGE data to the Studio frontend.
 """
 
+import asyncio
 import importlib
 import inspect
 import ipaddress
@@ -342,6 +343,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ==================== Health Check ====================
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Studio backend."""
+    return {"status": "ok", "service": "sage-studio-backend", "port": StudioPorts.BACKEND}
 
 
 # Auth Endpoints
@@ -1704,40 +1714,96 @@ async def proxy_chat_completions(
         # Collect assistant response
         collected_content = []
 
-        # Forward to Gateway
+        # Resolve engine URL dynamically based on selected model
+        engine_base_url = _resolve_engine_url(body.get("model"))
+        print(f"[chat] Resolved engine URL: {engine_base_url} for model: {body.get('model')}")
+
         # We use a stream to support SSE
         async def event_generator():
             try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                # Use timeout=None for streaming to avoid timeout during generation
+                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None)) as client:
                     async with client.stream(
                         "POST",
-                        f"{GATEWAY_BASE_URL}/v1/chat/completions",
+                        f"{engine_base_url}/chat/completions",
                         json=body,
                     ) as response:
                         if response.status_code != 200:
                             error_msg = await response.aread()
-                            yield f"data: {json.dumps({'error': f'Gateway error: {response.status_code} - {error_msg.decode()}'})}\n\n"
+                            yield f"data: {json.dumps({'error': f'Engine error: {response.status_code} - {error_msg.decode()}'})}\n\n"
                             return
 
-                        async for chunk in response.aiter_bytes():
-                            # Parse SSE to collect assistant content
-                            chunk_str = chunk.decode("utf-8", errors="ignore")
-                            for line in chunk_str.split("\n"):
-                                if line.startswith("data: "):
-                                    data = line[6:].strip()
-                                    if data and data != "[DONE]":
-                                        try:
-                                            parsed = json.loads(data)
-                                            content = (
-                                                parsed.get("choices", [{}])[0]
-                                                .get("delta", {})
-                                                .get("content")
-                                            )
-                                            if content:
-                                                collected_content.append(content)
-                                        except Exception:
-                                            pass
-                            yield chunk
+                        # Process streaming response - skip event metadata, extract only content
+                        async for line in response.aiter_lines():
+                            if not line.strip():
+                                continue
+                                
+                            if line.startswith("data: "):
+                                data = line[6:].strip()
+                                
+                                if data == "[DONE]":
+                                    yield "data: [DONE]\n\n"
+                                    continue
+                                
+                                if not data:
+                                    continue
+                                
+                                try:
+                                    parsed = json.loads(data)
+                                    content = (
+                                        parsed.get("choices", [{}])[0]
+                                        .get("delta", {})
+                                        .get("content")
+                                    )
+                                    
+                                    if not content:
+                                        # Check for finish_reason
+                                        finish_reason = parsed.get("choices", [{}])[0].get("finish_reason")
+                                        if finish_reason:
+                                            yield line + "\n"
+                                        continue
+                                    
+                                    # Skip sageLLM event metadata (event='start', event='end')
+                                    if "event='start'" in content or "event='end'" in content:
+                                        continue
+                                        
+                                    # Extract actual text from sageLLM delta events
+                                    if "event='delta'" in content and "chunk='" in content:
+                                        import re
+                                        # Match chunk='...' handling escaped quotes
+                                        match = re.search(r"chunk='((?:[^'\\\\]|\\\\.)*)'", content)
+                                        if match:
+                                            chunk_text = match.group(1)
+                                            # Remove prompt prefix
+                                            if "Assistant:" in chunk_text:
+                                                chunk_text = chunk_text.split("Assistant:")[-1]
+                                            # Clean up escape sequences
+                                            chunk_text = chunk_text.replace("\\n", " ").replace("\\r", "").strip()
+                                            
+                                            if chunk_text:
+                                                collected_content.append(chunk_text)
+                                                # Create clean response
+                                                clean_chunk = {
+                                                    "id": parsed.get("id"),
+                                                    "object": "chat.completion.chunk",
+                                                    "created": parsed.get("created"),
+                                                    "model": parsed.get("model"),
+                                                    "choices": [{
+                                                        "index": 0,
+                                                        "delta": {"content": chunk_text},
+                                                        "finish_reason": None
+                                                    }]
+                                                }
+                                                yield f"data: {json.dumps(clean_chunk)}\n\n"
+                                        continue
+                                    
+                                    # If no special formatting, pass through
+                                    if "event=" not in content and "chunk=" not in content:
+                                        collected_content.append(content)
+                                        yield line + "\n"
+                                        
+                                except Exception:
+                                    pass
 
                 # Save assistant message after streaming completes
                 if session_data and collected_content:
@@ -1750,8 +1816,19 @@ async def proxy_chat_completions(
                     session_data["last_active"] = datetime.now().isoformat()
                     _save_session(user_id, session_id, session_data)
 
+            except httpx.ConnectError as e:
+                error_msg = f"无法连接到 LLM 引擎 ({engine_base_url})。请确保引擎服务已启动。"
+                print(f"[chat] Connection error: {e}")
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                yield "data: [DONE]\n\n"
+            except httpx.ReadTimeout as e:
+                error_msg = f"LLM 引擎响应超时 ({engine_base_url})。引擎可能已挂起，请重启。"
+                print(f"[chat] Read timeout: {e}")
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                yield "data: [DONE]\n\n"
             except Exception as e:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                yield "data: [DONE]\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
     except Exception as e:
@@ -2905,6 +2982,98 @@ def _expand_api_key(value: Any) -> str:
     return value
 
 
+def _resolve_engine_url(model_name: str | None = None) -> str:
+    """Resolve the OpenAI-compatible base URL for the given model.
+
+    Resolution order:
+    1. Environment variables (SAGE_CHAT_BASE_URL) — set by select_llm_model
+    2. Persisted default in config/models.json
+    3. Gateway Control Plane engine list (match by model name)
+    4. Probe known local ports (9001, 8901, 8001)
+    5. Fallback to Gateway proxy endpoint
+
+    Returns:
+        Base URL ending with /v1 (e.g. "http://127.0.0.1:9001/v1")
+    """
+    # Normalize sentinel value
+    if model_name in (None, "sage-default", ""):
+        model_name = None
+    # 1. Explicit env (highest priority, set by /api/llm/select)
+    env_base_url = os.getenv("SAGE_CHAT_BASE_URL", "").strip()
+    if env_base_url:
+        url = env_base_url.rstrip("/")
+        if not url.endswith("/v1"):
+            url += "/v1"
+        if _probe_llm_endpoint(url):
+            return url
+
+    # 2. Persisted default from config/models.json
+    config_models, _ = _load_models_config(filter_missing=False)
+    persisted_default = next((m for m in config_models if m.get("default")), None)
+    if persisted_default and persisted_default.get("base_url"):
+        url = persisted_default["base_url"].rstrip("/")
+        if not url.endswith("/v1"):
+            url += "/v1"
+        if _probe_llm_endpoint(url):
+            return url
+
+    # 3. Match model by name from config
+    if model_name:
+        for m in config_models:
+            if m.get("name") == model_name and m.get("base_url"):
+                url = m["base_url"].rstrip("/")
+                if not url.endswith("/v1"):
+                    url += "/v1"
+                if _probe_llm_endpoint(url):
+                    return url
+
+    # 4. Gateway Control Plane engine lookup
+    try:
+        resp = requests.get(
+            f"{GATEWAY_BASE_URL}/v1/management/engines",
+            timeout=2,
+            proxies={"http": None, "https": None},
+        )
+        if resp.status_code == 200:
+            engines = resp.json().get("engines", [])
+            for engine in engines:
+                if engine.get("engine_kind") == "embedding":
+                    continue
+                if engine.get("state") != "READY":
+                    continue
+                engine_model = engine.get("model_id") or engine.get("engine_id", "")
+                host = engine.get("host", "localhost")
+                port = engine.get("port", 9001)
+                url = f"http://{host}:{port}/v1"
+                # If model_name matches or we just need any engine
+                if not model_name or engine_model == model_name:
+                    if _probe_llm_endpoint(url):
+                        return url
+            # If specific model not found, use any available engine
+            if model_name:
+                for engine in engines:
+                    if engine.get("engine_kind") == "embedding":
+                        continue
+                    if engine.get("state") != "READY":
+                        continue
+                    host = engine.get("host", "localhost")
+                    port = engine.get("port", 9001)
+                    url = f"http://{host}:{port}/v1"
+                    if _probe_llm_endpoint(url):
+                        return url
+    except Exception:
+        pass
+
+    # 5. Probe known local ports directly
+    for port in [9001, 8901, 8001]:
+        url = f"http://127.0.0.1:{port}/v1"
+        if _probe_llm_endpoint(url):
+            return url
+
+    # 6. Fallback: use Gateway as proxy
+    return f"{GATEWAY_BASE_URL}/v1"
+
+
 def _load_models_config(filter_missing: bool = False) -> tuple[list[dict[str, Any]], Path | None]:
     path = _get_models_config_path()
     if not path or not path.exists():
@@ -3137,7 +3306,7 @@ def _probe_llm_endpoint(base_url: str | None, headers: dict[str, str] | None = N
 
 @app.post("/api/llm/select")
 async def select_llm_model(request: SelectModelRequest):
-    """选择要使用的 LLM 模型"""
+    """选择要使用的 LLM 模型（支持自动启动引擎）"""
     try:
         # 更新环境变量，这样后续的 get_llm_status 调用（会创建新的 UnifiedInferenceClient）
         # 就会使用新的配置
@@ -3158,30 +3327,176 @@ async def select_llm_model(request: SelectModelRequest):
             if "SAGE_CHAT_API_KEY" in os.environ:
                 del os.environ["SAGE_CHAT_API_KEY"]
 
-        # Register with Control Plane
-        try:
-            parsed = urlparse(request.base_url)
-            host = parsed.hostname or "localhost"
-            port = parsed.port or (443 if parsed.scheme == "https" else 80)
-            register_url = f"{GATEWAY_BASE_URL}/v1/management/engines/register"
+        # 判断是否是本地模型（需要启动引擎）
+        is_local = _is_loopback_url(request.base_url)
+        
+        if is_local and _is_model_name(request.model_name):
+            # Check if the requested model is already running at any known port
+            for check_port in [9001, 8901, 8001]:
+                try:
+                    check_resp = requests.get(
+                        f"http://127.0.0.1:{check_port}/v1/models", timeout=2
+                    )
+                    if check_resp.status_code == 200:
+                        models_data = check_resp.json().get("data", [])
+                        if any(m.get("id") == request.model_name for m in models_data):
+                            # Model already running — update base_url to actual port
+                            actual_base_url = f"http://127.0.0.1:{check_port}/v1"
+                            os.environ["SAGE_CHAT_BASE_URL"] = actual_base_url
+                            try:
+                                _persist_model_selection(request.model_name, actual_base_url)
+                            except Exception:
+                                pass
+                            print(f"Model {request.model_name} already running at port {check_port}")
+                            return {
+                                "status": "success",
+                                "message": f"已切换到模型: {request.model_name} (端口 {check_port})",
+                                "engine_started": False,
+                            }
+                except Exception:
+                    pass
 
-            payload = {
-                "engine_id": f"ext-{request.model_name}",
-                "model_id": request.model_name,
-                "host": host,
-                "port": port,
-                "engine_kind": "llm",
-                "metadata": {"source": "studio_select", "scheme": parsed.scheme or "http"},
-            }
+            # 本地 Hugging Face 模型，需要通过 sage-llm serve-engine 启动
+            print(f"Detected local model: {request.model_name}, starting engine...")
+            
+            try:
+                # 使用 subprocess 调用 sage-llm serve-engine
+                import subprocess
+                engine_port = 9001
+                cmd = [
+                    "sage-llm", "serve-engine",
+                    "--model", request.model_name,
+                    "--port", str(engine_port),
+                    "--host", "0.0.0.0",
+                ]
+                
+                # 后台启动引擎
+                subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+                
+                # 等待引擎注册（最多30秒）
+                import time
+                actual_engine_base_url = f"http://127.0.0.1:{engine_port}/v1"
+                for i in range(30):
+                    await asyncio.sleep(1)
+                    
+                    # Check if engine is directly reachable first
+                    try:
+                        probe_resp = requests.get(
+                            f"http://127.0.0.1:{engine_port}/v1/models", timeout=2
+                        )
+                        if probe_resp.status_code == 200:
+                            models_data = probe_resp.json().get("data", [])
+                            if any(m.get("id") == request.model_name for m in models_data):
+                                # Update env to point to actual engine URL
+                                os.environ["SAGE_CHAT_BASE_URL"] = actual_engine_base_url
+                                try:
+                                    _persist_model_selection(request.model_name, actual_engine_base_url)
+                                except Exception:
+                                    pass
+                                print(f"Engine for {request.model_name} is ready at port {engine_port}")
+                                return {
+                                    "status": "success",
+                                    "message": f"已启动并切换到模型: {request.model_name}",
+                                    "engine_started": True,
+                                }
+                    except Exception:
+                        pass
+                    
+                    # 每5秒尝试向 Gateway 注册
+                    if (i + 1) % 5 == 0:
+                        try:
+                            engine_id = f"studio-model-{request.model_name.replace('/', '-')}"
+                            register_url = f"{GATEWAY_BASE_URL}/v1/management/engines/register"
+                            register_payload = {
+                                "engine_id": engine_id,
+                                "model_id": request.model_name,
+                                "host": "localhost",
+                                "port": engine_port,
+                                "engine_kind": "llm",
+                                "metadata": {"source": "studio_model_select", "model": request.model_name},
+                            }
+                            
+                            register_response = requests.post(
+                                register_url,
+                                json=register_payload,
+                                timeout=2,
+                                proxies={"http": None, "https": None}
+                            )
+                            
+                            if register_response.status_code == 200:
+                                print(f"Engine {engine_id} registered with Gateway")
+                        except Exception:
+                            pass
+                
+                # 超时但继续返回成功（引擎可能仍在后台加载）
+                # Update env to engine port so chat proxy will find it when ready
+                os.environ["SAGE_CHAT_BASE_URL"] = actual_engine_base_url
+                try:
+                    _persist_model_selection(request.model_name, actual_engine_base_url)
+                except Exception:
+                    pass
+                return {
+                    "status": "success",
+                    "message": f"已启动模型加载: {request.model_name}（可能需要1-2分钟）",
+                    "engine_started": True,
+                    "note": "引擎正在后台加载，请稍后刷新"
+                }
+                
+            except Exception as e:
+                print(f"Failed to start engine: {e}")
+                return {
+                    "status": "partial",
+                    "message": f"配置已更新，但引擎启动失败: {e}",
+                    "engine_started": False
+                }
+        
+        else:
+            # 外部 API 或已运行的服务，只需注册
+            try:
+                parsed = urlparse(request.base_url)
+                host = parsed.hostname or "localhost"
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                register_url = f"{GATEWAY_BASE_URL}/v1/management/engines/register"
 
-            requests.post(register_url, json=payload, timeout=2)
-            print(f"Registered model {request.model_name} with Control Plane")
-        except Exception as e:
-            print(f"Failed to register model with Control Plane: {e}")
+                payload = {
+                    "engine_id": f"ext-{request.model_name}",
+                    "model_id": request.model_name,
+                    "host": host,
+                    "port": port,
+                    "engine_kind": "llm",
+                    "metadata": {"source": "studio_select", "scheme": parsed.scheme or "http"},
+                }
 
-        return {"status": "success", "message": f"已切换到模型: {request.model_name}"}
+                requests.post(register_url, json=payload, timeout=2)
+                print(f"Registered external model {request.model_name} with Control Plane")
+            except Exception as e:
+                print(f"Failed to register model with Control Plane: {e}")
+
+            return {"status": "success", "message": f"已切换到模型: {request.model_name}"}
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"切换模型失败: {str(e)}")
+
+
+def _is_model_name(name: str) -> bool:
+    """判断是否是 Hugging Face 模型名称（而非 API 端点名称）"""
+    # Hugging Face 模型名称格式: organization/model-name 或 model-name
+    # 例如: Qwen/Qwen2.5-7B-Instruct, gpt-3.5-turbo
+    if not name:
+        return False
+    
+    # 如果包含 '/' 但不是 URL，则是 HF 模型
+    if '/' in name and not name.startswith(('http://', 'https://')):
+        return True
+    
+    # 常见的本地模型模式
+    local_patterns = ['Qwen', 'llama', 'mistral', 'tinyllama', 'phi', 'gemma']
+    return any(pattern.lower() in name.lower() for pattern in local_patterns)
 
 
 @app.get("/api/llm/status")
@@ -3256,7 +3571,19 @@ async def get_llm_status():
                 try:
                     health_resp = requests.get(_build_health_url(probe_url), timeout=2)
                     status["healthy"] = health_resp.status_code == 200
-                    status["service_type"] = "local_vllm"
+                    
+                    # Detect engine type from health response
+                    try:
+                        health_data = health_resp.json()
+                        engine_id = health_data.get("engine_id", "")
+                        if "cpu" in engine_id.lower():
+                            status["service_type"] = "sagellm_cpu"
+                        elif "gpu" in engine_id.lower():
+                            status["service_type"] = "sagellm_gpu"
+                        else:
+                            status["service_type"] = "local_engine"
+                    except Exception:
+                        status["service_type"] = "local_engine"
 
                     models_resp = requests.get(f"{probe_url}/models", timeout=2)
                     if models_resp.status_code == 200:
@@ -3275,6 +3602,68 @@ async def get_llm_status():
         # Build available model list
         # 复用前面读取的配置，避免重复加载
         available_models = []
+        seen_models = {}  # 用于去重: (model_name, base_url) -> model_entry
+        
+        # 1. 从 Gateway Control Plane 获取已注册的引擎
+        try:
+            engine_list_response = requests.get(
+                f"{GATEWAY_BASE_URL}/v1/management/engines",
+                timeout=2,
+                proxies={"http": None, "https": None}
+            )
+            if engine_list_response.status_code == 200:
+                engine_data = engine_list_response.json()
+                engines = engine_data.get("engines", [])
+                for engine in engines:
+                    # 过滤条件：
+                    # 1. 排除 embedding 引擎
+                    # 2. 只保留 READY 状态的引擎（避免显示 ERROR 引擎）
+                    if engine.get("engine_kind") == "embedding":
+                        continue
+                    if engine.get("state") != "READY":
+                        continue
+                    
+                    # 构建可用模型条目
+                    model_name_from_engine = engine.get("model_id") or engine.get("engine_id", "unknown")
+                    host = engine.get("host", "localhost")
+                    port = engine.get("port", 9001)
+                    base_url = f"http://{host}:{port}/v1"
+                    
+                    # 去重：同一个 (model_name, base_url) 只保留第一个
+                    model_key = (model_name_from_engine, base_url)
+                    if model_key not in seen_models:
+                        # 尝试从引擎获取设备信息
+                        device_info = "CPU"  # 默认值
+                        try:
+                            info_resp = requests.get(f"http://{host}:{port}/info", timeout=1)
+                            if info_resp.status_code == 200:
+                                info_data = info_resp.json()
+                                backend_type = info_data.get("backend_type", "")
+                                if "cuda" in backend_type.lower():
+                                    device_info = "CUDA"
+                                elif "ascend" in backend_type.lower():
+                                    device_info = "Ascend"
+                                else:
+                                    device_info = "CPU"
+                        except:
+                            pass
+                        
+                        model_entry = {
+                            "name": model_name_from_engine,
+                            "base_url": base_url,
+                            "is_local": True,
+                            "description": "本地推理引擎",
+                            "healthy": True,
+                            "engine_id": engine.get("engine_id"),
+                            "engine_type": "sageLLM",  # 推理引擎类型
+                            "device": device_info,  # 设备类型
+                        }
+                        available_models.append(model_entry)
+                        seen_models[model_key] = model_entry
+        except Exception as e:
+            print(f"Warning: Failed to fetch engines from Gateway: {e}")
+        
+        # 2. 从配置文件加载模型（去重，避免与 Gateway 引擎重复）
         for model in config_models:
             # Filter out embedding models
             if model.get("engine_kind") == "embedding":
@@ -3284,18 +3673,36 @@ async def get_llm_status():
                 continue
             if "embedding" in model.get("description", "").lower():
                 continue
-            available_models.append(dict(model))
+            
+            # 去重：检查是否已存在相同的 (model_name, base_url)
+            model_key = (model.get("name"), model.get("base_url"))
+            if model_key not in seen_models:
+                model_entry = dict(model)
+                available_models.append(model_entry)
+                seen_models[model_key] = model_entry
 
         def _merge_model(entry: dict[str, Any]) -> None:
             entry_url = entry.get("base_url")
+            entry_name = entry.get("name")
+            model_key = (entry_name, entry_url)
+            
+            # 如果已存在，更新现有条目
+            if model_key in seen_models:
+                seen_models[model_key].update({k: v for k, v in entry.items() if v is not None})
+                return
+            
+            # 兼容旧逻辑：检查 URL 匹配
             for existing in available_models:
                 existing_url = existing.get("base_url")
-                names_match = entry.get("name") and entry.get("name") == existing.get("name")
+                names_match = entry_name and entry_name == existing.get("name")
                 urls_match = _base_urls_match(entry_url, existing_url)
                 if urls_match or (not entry_url and not existing_url and names_match):
                     existing.update({k: v for k, v in entry.items() if v is not None})
                     return
+            
+            # 新条目
             available_models.append(entry)
+            seen_models[model_key] = entry
 
         for detected in _discover_launcher_models():
             _merge_model(detected)
@@ -3307,42 +3714,46 @@ async def get_llm_status():
                     "name": "Qwen/Qwen2.5-0.5B-Instruct",
                     "base_url": default_base,
                     "is_local": True,
-                    "description": "Local Small Model (Fast, CPU-friendly)",
+                    "description": "CPU-friendly (0.5B, ~2GB RAM)",
+                    "hardware": "CPU",
+                },
+                {
+                    "name": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "base_url": default_base,
+                    "is_local": True,
+                    "description": "CPU-friendly (1.5B, ~4GB RAM)",
+                    "hardware": "CPU",
+                },
+                {
+                    "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                    "base_url": default_base,
+                    "is_local": True,
+                    "description": "Minimal CPU model (1.1B, ~2.5GB RAM)",
+                    "hardware": "CPU",
+                },
+                {
+                    "name": "Qwen/Qwen2.5-3B-Instruct",
+                    "base_url": default_base,
+                    "is_local": True,
+                    "description": "Balanced model (3B, ~8GB RAM, CPU or GPU)",
+                    "hardware": "CPU/GPU",
                 },
                 {
                     "name": "Qwen/Qwen2.5-7B-Instruct",
                     "base_url": default_base,
                     "is_local": True,
-                    "description": "Local Standard Model (Requires GPU)",
+                    "description": "Standard model (7B, ~16GB RAM, GPU recommended)",
+                    "hardware": "GPU",
                 },
             ]
             for entry in defaults:
                 _merge_model(entry)
 
-        cloud_api_key = os.getenv("SAGE_CHAT_API_KEY")
-        cloud_base_url = os.getenv("SAGE_CHAT_BASE_URL")
-        if cloud_api_key and cloud_base_url:
-            cloud_entry = {
-                "name": os.getenv("SAGE_CHAT_MODEL", "qwen-turbo-2025-02-11"),
-                "base_url": _normalize_base_url(cloud_base_url),
-                "is_local": False,
-                "description": "Cloud API (Configured in .env)",
-                "api_key": cloud_api_key,
-                "healthy": True,
-            }
-            _merge_model(cloud_entry)
-
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if openai_api_key:
-            openai_entry = {
-                "name": os.getenv("OPENAI_MODEL_NAME", "gpt-3.5-turbo"),
-                "base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-                "is_local": False,
-                "description": "OpenAI API (Configured in .env)",
-                "api_key": openai_api_key,
-                "healthy": True,
-            }
-            _merge_model(openai_entry)
+        # NOTE: Cloud/OpenAI models are NOT automatically added to available_models list
+        # They will only appear if:
+        # 1. User explicitly selects them via select_llm_model (which sets env vars)
+        # 2. They are saved in config/models.json
+        # This ensures local models are preferred by default
 
         import concurrent.futures
 
@@ -3366,32 +3777,45 @@ async def get_llm_status():
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             available_models = list(executor.map(evaluate_model, available_models))
 
-        # Prefer healthy local models even if cloud env vars are present; fall back to any healthy.
-        preferred_model: dict[str, Any] | None = None
-        for model in available_models:
-            if model.get("is_local") and model.get("healthy") and model.get("default"):
-                preferred_model = model
-                break
-        if not preferred_model:
-            for model in available_models:
-                if model.get("is_local") and model.get("healthy"):
-                    preferred_model = model
-                    break
-        if not preferred_model:
-            for model in available_models:
-                if model.get("healthy"):
-                    preferred_model = model
-                    break
+        # Save explicit env settings to check later
+        explicit_env_model = os.getenv("SAGE_CHAT_MODEL", "")
+        explicit_env_base_url = os.getenv("SAGE_CHAT_BASE_URL", "")
+        has_explicit_env = bool(explicit_env_model and explicit_env_base_url)
 
-        if preferred_model:
-            status["base_url"] = preferred_model.get("base_url") or status.get("base_url")
-            status["model_name"] = preferred_model.get("name") or status.get("model_name")
-            status["is_local"] = preferred_model.get("is_local", status.get("is_local"))
-            status["service_type"] = (
-                "local_vllm" if preferred_model.get("is_local") else "remote_api"
-            )
-            if preferred_model.get("base_url"):
-                status["running"] = True
+        # Prefer healthy local models even if cloud env vars are present; fall back to any healthy.
+        # BUT: if user just selected a model via select_llm_model (env vars are set),
+        # don't override with preferred_model logic.
+        preferred_model: dict[str, Any] | None = None
+        
+        if not has_explicit_env:
+            # Only auto-select preferred model if no explicit env vars
+            for model in available_models:
+                if model.get("is_local") and model.get("healthy") and model.get("default"):
+                    preferred_model = model
+                    break
+            if not preferred_model:
+                for model in available_models:
+                    if model.get("is_local") and model.get("healthy"):
+                        preferred_model = model
+                        break
+            if not preferred_model:
+                for model in available_models:
+                    if model.get("healthy"):
+                        preferred_model = model
+                        break
+
+            if preferred_model:
+                status["base_url"] = preferred_model.get("base_url") or status.get("base_url")
+                status["model_name"] = preferred_model.get("name") or status.get("model_name")
+                status["is_local"] = preferred_model.get("is_local", status.get("is_local"))
+                status["service_type"] = (
+                    "local_vllm" if preferred_model.get("is_local") else "remote_api"
+                )
+                if preferred_model.get("base_url"):
+                    status["running"] = True
+        else:
+            # User explicitly selected a model - keep the env var settings
+            print(f"🎯 Using explicit env model: {explicit_env_model} @ {explicit_env_base_url}")
 
         status_base_url = status.get("base_url")
         match_found = False

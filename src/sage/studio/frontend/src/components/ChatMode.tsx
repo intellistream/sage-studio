@@ -148,21 +148,49 @@ function ModelSelector({
         }
     }
 
-    const items = llmStatus?.available_models?.map(model => ({
-        key: model.name,
-        label: (
-            <div className="py-1 flex items-center justify-between min-w-[200px]">
-                <div>
-                    <div className="font-medium">{model.name}</div>
-                    <div className="text-xs text-[--gemini-text-secondary]">
-                        {model.description || (model.is_local ? 'Local Model' : 'Cloud Model')}
+    const currentModelName = llmStatus?.model_name
+    const currentModel = llmStatus?.available_models?.find(m => m.name === currentModelName)
+    
+    const items = llmStatus?.available_models?.map(model => {
+        const isSelected = model.name === currentModelName
+        
+        return {
+            key: model.name,
+            label: (
+                <div className="py-1 flex items-center justify-between min-w-[280px]">
+                    <div className="flex-1">
+                        <div className={`font-medium flex items-center gap-2 ${
+                            isSelected ? 'text-blue-600 dark:text-blue-400' : ''
+                        }`}>
+                            {model.name}
+                            {isSelected && (
+                                <span className="text-xs px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded">当前</span>
+                            )}
+                        </div>
+                        <div className="text-xs text-[--gemini-text-secondary] space-y-0.5">
+                            <div>{model.description || (model.is_local ? 'Local Model' : 'Cloud Model')}</div>
+                            {(model.engine_type || model.device) && (
+                                <div className="flex items-center gap-2 text-[11px] mt-0.5">
+                                    {model.engine_type && (
+                                        <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
+                                            {model.engine_type}
+                                        </span>
+                                    )}
+                                    {model.device && (
+                                        <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded">
+                                            {model.device}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
+                    {/* Status Indicator */}
+                    <div className={`w-2 h-2 rounded-full ml-3 flex-shrink-0 ${model.healthy ? 'bg-green-500' : 'bg-red-400'}`} title={model.healthy ? 'Running' : 'Stopped/Unreachable'} />
                 </div>
-                {/* Status Indicator */}
-                <div className={`w-2 h-2 rounded-full ${model.healthy ? 'bg-green-500' : 'bg-red-400'}`} title={model.healthy ? 'Running' : 'Stopped/Unreachable'} />
-            </div>
-        ),
-    })) || [
+            ),
+        }
+    }) || [
             {
                 key: 'current',
                 label: (
@@ -186,13 +214,34 @@ function ModelSelector({
             trigger={['click']}
         >
             <button className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[--gemini-hover-bg] transition-colors">
-                <span className="text-sm font-medium text-[--gemini-text-primary]">
-                    {modelName}
-                </span>
+                <div className="flex flex-col items-start">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-[--gemini-text-primary]">
+                            {modelName}
+                        </span>
+                        {isHealthy && (
+                            <span className="w-2 h-2 bg-green-500 rounded-full" />
+                        )}
+                    </div>
+                    {currentModel && (currentModel.engine_type || currentModel.device) && (
+                        <div className="flex items-center gap-1.5 text-[10px] mt-0.5">
+                            {currentModel.engine_type && (
+                                <span className="text-blue-600 dark:text-blue-400">
+                                    {currentModel.engine_type}
+                                </span>
+                            )}
+                            {currentModel.engine_type && currentModel.device && (
+                                <span className="text-[--gemini-text-secondary]">·</span>
+                            )}
+                            {currentModel.device && (
+                                <span className="text-[--gemini-text-secondary]">
+                                    {currentModel.device}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <ChevronDown size={16} className="text-[--gemini-text-secondary]" />
-                {isHealthy && (
-                    <span className="w-2 h-2 bg-green-500 rounded-full" />
-                )}
             </button>
         </Dropdown>
     )
@@ -467,13 +516,60 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
 
     const handleModelSelect = async (modelName: string, baseUrl: string) => {
         try {
-            await selectLLMModel(modelName, baseUrl)
-            antMessage.success(`Switched to model: ${modelName}`)
-            // Refresh status immediately
-            await loadLLMStatus()
+            // Show loading message
+            const hideLoading = antMessage.loading(`切换到模型: ${modelName}...`, 0)
+            
+            try {
+                await selectLLMModel(modelName, baseUrl)
+                console.log(`✅ Model selection API called for: ${modelName}`)
+                
+                // Wait for backend config to update (retry up to 5 times with 1s interval)
+                let retries = 5
+                let modelNameMatched = false
+                
+                while (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 1000))
+                    const status = await getLLMStatus()
+                    console.log(`🔄 Status check: model_name=${status.model_name}, target=${modelName}`)
+                    
+                    // Success: model_name matches (don't require healthy yet)
+                    if (status.model_name === modelName) {
+                        modelNameMatched = true
+                        setLlmStatus(status)
+                        hideLoading()
+                        
+                        const currentModel = status.available_models?.find(m => m.name === modelName)
+                        if (currentModel?.healthy) {
+                            antMessage.success(`已切换到: ${modelName}`)
+                        } else {
+                            antMessage.success(`已切换到: ${modelName}（模型启动中...）`)
+                        }
+                        break
+                    }
+                    
+                    retries--
+                }
+                
+                // Even if model_name doesn't match yet, force update UI to show the selection
+                if (!modelNameMatched) {
+                    const finalStatus = await getLLMStatus()
+                    console.warn(`⚠️ Model name mismatch: expected ${modelName}, got ${finalStatus.model_name}`)
+                    
+                    // Force update the status to show the selected model
+                    finalStatus.model_name = modelName
+                    finalStatus.base_url = baseUrl
+                    setLlmStatus(finalStatus)
+                    
+                    hideLoading()
+                    antMessage.warning(`模型已配置: ${modelName}（后台加载中...）`)
+                }
+            } catch (error) {
+                hideLoading()
+                throw error
+            }
         } catch (error) {
             console.error('Failed to switch model:', error)
-            antMessage.error('Failed to switch model')
+            antMessage.error('切换模型失败')
         }
     }
 
@@ -536,11 +632,14 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     }
 
     const handleSendMessage = async () => {
+        console.log('[ChatMode Debug] handleSendMessage called, input:', currentInput)
         if (!currentInput.trim() || isStreaming || isSending) {
+            console.log('[ChatMode Debug] Early return - empty input or busy:', { isEmpty: !currentInput.trim(), isStreaming, isSending })
             return
         }
 
         const userMessageContent = currentInput.trim()
+        console.log('[ChatMode Debug] Processing message:', userMessageContent)
         setCurrentInput('')
         setIsSending(true)
 
@@ -583,11 +682,16 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
             setIsStreaming(true)
             setStreamingMessageId(assistantMessageId)
 
+            const selectedModel = llmStatus?.model_name || 'sage-default'
+            console.log('[ChatMode Debug] Selected model:', selectedModel, 'from llmStatus:', llmStatus)
+
             await sendChatMessage(
                 userMessageContent,
                 sessionId,
                 (chunk: string) => {
+                    console.log('[ChatMode Debug] onChunk callback received chunk:', chunk)
                     appendToMessage(sessionId, assistantMessageId, chunk)
+                    console.log('[ChatMode Debug] Called appendToMessage with:', { sessionId, assistantMessageId, chunkLength: chunk.length })
                 },
                 (error: Error) => {
                     console.error('Streaming error:', error)
@@ -620,7 +724,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                         setMessageReasoning(sessionId, assistantMessageId, false)
                     },
                 },
-                llmStatus?.model_name // Pass the selected model
+                selectedModel // Pass the selected model with fallback
             )
         } catch (error) {
             console.error('Send message error:', error)

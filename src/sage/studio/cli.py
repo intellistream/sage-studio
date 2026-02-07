@@ -82,11 +82,14 @@ def status():
     """Show Studio status."""
     manager = _get_studio_manager()
     status_info = manager.status()
-    if status_info.get("running"):
+    # Fix: Handle None return value
+    if status_info and status_info.get("running"):
         console.print("[green]✓ Studio is running[/green]")
         config = status_info.get("config", {})
         console.print(f"  Port: {config.get('port', 'N/A')}")
         console.print(f"  Host: {config.get('host', 'N/A')}")
+    elif status_info is None:
+        console.print("[red]❌ Error getting Studio status[/red]")
     else:
         console.print("[yellow]Studio is not running[/yellow]")
 
@@ -95,13 +98,16 @@ def status():
 def restart(
     frontend_port: Optional[int] = typer.Option(None, "--port", "-p", help="Frontend port"),
     dev: bool = typer.Option(True, "--dev/--prod", help="Development or production mode"),
+    skip_confirm: bool = typer.Option(
+        False, "--yes", "-y", help="Skip confirmation prompts"
+    ),
 ):
     """Restart SAGE Studio."""
     manager = _get_studio_manager()
     console.print("🔄 Restarting Studio...")
-    # 重启时不停止 Gateway 和 LLM 服务（它们可能被其他服务使用）
-    manager.stop(stop_gateway=False, stop_llm=False)
-    manager.start(port=frontend_port, dev=dev, skip_confirm=True)
+    # 🔧 FIX: 重启时停止 LLM 服务（避免端口冲突），但保留 Gateway（共享服务）
+    manager.stop(stop_gateway=False, stop_llm=True)
+    manager.start(port=frontend_port, dev=dev, skip_confirm=skip_confirm)
 
 
 @app.command()

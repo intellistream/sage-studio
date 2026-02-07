@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- CI/CD workflow for automated testing (`.github/workflows/ci-test.yml`)
+  - Unit tests on Python 3.10 and 3.11
+  - Integration tests with CPU backend
+  - E2E tests for LLM integration
+  - Code quality checks (Ruff, Mypy)
+- Integration test for Studio LLM startup (`tests/integration/test_studio_llm_integration.py`)
+  - Tests sageLLM CPU backend engine script generation
+  - Validates script content and configuration
+  - Checks Gateway detection logic
+  - Supports environment variable configuration for CI
+- Workflow documentation (`.github/workflows/README.md`)
+
+### Changed
+- Updated integration tests to use pytest markers (`@pytest.mark.integration`)
+- Improved test organization and CI compatibility
+
+### Fixed
+- Test file path organization (moved to `tests/integration/`)
+
+## [Previous Unreleased]
+
+### Added
 - Initial independent repository setup
 - Extracted from main SAGE monorepo with full git history
 

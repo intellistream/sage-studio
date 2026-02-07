@@ -128,10 +128,22 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${YELLOW}${BOLD}Step 3: Verifying Installation${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
+# Fix namespace package issue (remove blocking __init__.py if exists)
+SAGE_NAMESPACE_INIT="$(python -c 'import site; import os; print(os.path.join(site.getsitepackages()[0], "sage", "__init__.py"))' 2>/dev/null)"
+if [ -f "$SAGE_NAMESPACE_INIT" ] && [ ! -s "$SAGE_NAMESPACE_INIT" ]; then
+    echo -e "${YELLOW}⚠ Fixing namespace package issue...${NC}"
+    rm -f "$SAGE_NAMESPACE_INIT"
+    echo -e "${GREEN}✓ Namespace package fixed${NC}"
+fi
+
 if python -c "from sage.studio.studio_manager import StudioManager; print('✓ SAGE Studio installed successfully')" 2>/dev/null; then
     echo -e "${GREEN}✓ Installation verified${NC}"
 else
     echo -e "${RED}✗ Installation verification failed${NC}"
+    echo -e "${YELLOW}Troubleshooting:${NC}"
+    echo -e "  1. Check if SAGE core packages are installed: pip list | grep isage"
+    echo -e "  2. Try reinstalling: pip install -e ."
+    echo -e "  3. Check Python can import sage: python -c 'import sage'"
     exit 1
 fi
 

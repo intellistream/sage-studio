@@ -16,10 +16,10 @@ export default defineConfig({
         // 'true' means allow any host - necessary for reverse proxy setups
         allowedHosts: true,
         proxy: {
-            // Studio Backend API - 从环境变量或默认配置读取
-            // VITE_BACKEND_PORT 默认 8080 (对应 SagePorts.STUDIO_BACKEND)
+            // Studio Backend API - 独立后端提供完整的 SAGE 框架能力
+            // 支持环境变量配置端口，避免 8080 冲突
             '/api': {
-                target: `http://localhost:${process.env.VITE_BACKEND_PORT || '8080'}`,
+                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8080'}`,
                 changeOrigin: true,
                 rewrite: (path) => path,
             },
@@ -35,9 +35,9 @@ export default defineConfig({
         // Allow all external hosts (Cloudflare Tunnel, custom domains, etc.)
         allowedHosts: true,
         proxy: {
-            // Studio Backend API - 从环境变量或默认配置读取
+            // Studio Backend API
             '/api': {
-                target: `http://localhost:${process.env.VITE_BACKEND_PORT || '8080'}`,
+                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8080'}`,
                 changeOrigin: true,
                 rewrite: (path) => path,
             },

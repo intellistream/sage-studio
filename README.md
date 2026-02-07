@@ -136,6 +136,41 @@ sage studio npm install    # 安装/更新 npm 依赖
 sage studio npm run lint   # 运行前端脚本
 ```
 
+### 🖥️ CPU 推理支持（新功能）
+
+**SAGE Studio 现已支持 CPU 友好的小模型推理，无需 GPU！**
+
+#### 快速启动 CPU 模型
+
+```bash
+# 方法 1: 使用一键启动脚本（推荐）
+cd sage-studio
+./start_cpu_model.sh
+
+# 方法 2: 手动启动（自定义配置）
+sage llm engine start Qwen/Qwen2.5-0.5B-Instruct --engine-kind llm --port 8901
+```
+
+#### 可用的 CPU 模型
+
+| 模型 | 大小 | 内存需求 | 推荐场景 |
+|------|------|---------|---------|
+| **Qwen/Qwen2.5-0.5B-Instruct** ⭐ | 0.5B | ~2GB | 最快速度，适合原型开发 |
+| **TinyLlama-1.1B-Chat** | 1.1B | ~2.5GB | 轻量对话，测试流水线 |
+| **Qwen/Qwen2.5-1.5B-Instruct** | 1.5B | ~4GB | 平衡性能和速度 |
+| **Qwen/Qwen2.5-3B-Instruct** | 3B | ~8GB | 更好质量（CPU/GPU 均可） |
+
+⭐ = 最推荐的 CPU 模型
+
+#### 使用步骤
+
+1. **启动模型**：运行上述命令启动 CPU 模型
+2. **刷新页面**：刷新 Studio 浏览器页面
+3. **选择模型**：点击右上角模型选择器，选择已启动的模型
+4. **开始使用**：状态指示灯变绿后即可使用
+
+📖 **完整指南**：查看 [`docs/CPU_INFERENCE_GUIDE.md`](docs/CPU_INFERENCE_GUIDE.md) 了解详细配置和优化技巧。
+
 ## 🔐 Authentication & Security
 
 SAGE Studio v2.0 引入了完整的用户认证和数据隔离系统：

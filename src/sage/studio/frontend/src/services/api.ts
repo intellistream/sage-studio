@@ -726,11 +726,15 @@ export async function sendChatMessage(
     model?: string
 ): Promise<void> {
     try {
-        const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
+        // Use provided model or fallback to a default
+        const modelName = model || 'sage-default'
+        console.log('[API Debug] Sending chat with model:', modelName)
+        
+        const response = await fetch(`${API_BASE_URL}/chat/v1/chat/completions`, {
             method: 'POST',
             headers: getAuthHeaders(),
             body: JSON.stringify({
-                model: model,
+                model: modelName,
                 messages: [{ role: 'user', content: message }],
                 session_id: sessionId,
                 stream: true,
@@ -767,14 +771,18 @@ export async function sendChatMessage(
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     const data = line.substring(6).trim()
+                    console.log('[SSE Debug] Raw SSE line:', line)
+                    console.log('[SSE Debug] Extracted data:', data)
 
                     if (data === '[DONE]') {
+                        console.log('[SSE Debug] Received [DONE], completing stream')
                         onComplete()
                         return
                     }
 
                     try {
                         const parsed = JSON.parse(data)
+                        console.log('[SSE Debug] Parsed JSON:', JSON.stringify(parsed, null, 2))
 
                         // 处理推理步骤事件 (旧版)
                         if (parsed.type === 'reasoning_step' && callbacks?.onReasoningStep) {
@@ -802,8 +810,12 @@ export async function sendChatMessage(
 
                         // 处理标准 OpenAI 格式的内容
                         const content = parsed.choices?.[0]?.delta?.content
+                        console.log('[SSE Debug] Received content:', content, 'Full parsed:', parsed)
                         if (content) {
+                            console.log('[SSE Debug] Calling onChunk with:', content)
                             onChunk(content)
+                        } else {
+                            console.log('[SSE Debug] No content in delta, choices:', parsed.choices)
                         }
                     } catch {
                         console.warn('Failed to parse SSE data:', data)
@@ -896,7 +908,7 @@ export async function sendChatMessageWithAgent(
     const { onStep, onStepUpdate, onStepContent, onContent, onReasoningEnd, onError, onComplete } = callbacks
 
     try {
-        const response = await fetch(`${API_BASE_URL}/v1/chat/completions`, {
+        const response = await fetch(`${API_BASE_URL}/chat/v1/chat/completions`, {
             method: 'POST',
             headers: getAuthHeaders(),
             body: JSON.stringify({
@@ -1235,6 +1247,8 @@ export interface LLMStatus {
         is_local: boolean
         description?: string
         healthy?: boolean
+        engine_type?: string  // 推理引擎类型（sageLLM）
+        device?: string  // 设备类型（CPU/CUDA/Ascend）
     }>
     error?: string
 }

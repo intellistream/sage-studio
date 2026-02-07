@@ -161,15 +161,18 @@ export const useChatStore = create<ChatState>((
     }),
 
     appendToMessage: (sessionId: string, messageId: string, chunk: string) => set((state: ChatState) => {
+        console.log('[Store Debug] appendToMessage called:', { sessionId, messageId, chunk })
         const sessionMessages = state.messages[sessionId] || []
+        const updatedMessages = sessionMessages.map((msg: ChatMessage) =>
+            msg.id === messageId
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+        )
+        console.log('[Store Debug] Updated messages:', updatedMessages.find((m: ChatMessage) => m.id === messageId))
         return {
             messages: {
                 ...state.messages,
-                [sessionId]: sessionMessages.map((msg: ChatMessage) =>
-                    msg.id === messageId
-                        ? { ...msg, content: msg.content + chunk }
-                        : msg
-                ),
+                [sessionId]: updatedMessages,
             },
         }
     }),
