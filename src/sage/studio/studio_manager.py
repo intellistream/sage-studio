@@ -392,18 +392,62 @@ class StudioManager:
         console.print(f"[blue]🚀 启动 LLM 引擎（将注册到 Gateway {port}）...[/blue]")
         return self._start_default_engine(port)
 
+    def _select_model_by_memory(self, requested_model: str) -> str:
+        """根据可用内存自动选择合适的模型。
+
+        如果系统内存不足以运行请求的模型，自动降级到更小的模型。
+
+        Args:
+            requested_model: 用户请求的模型名称
+
+        Returns:
+            实际适合当前内存的模型名称
+        """
+        mem = psutil.virtual_memory()
+        available_gb = mem.available / (1024**3)
+
+        # 模型近似内存需求 (GB)
+        model_requirements: dict[str, float] = {
+            "Qwen/Qwen2.5-0.5B-Instruct": 2.0,
+            "Qwen/Qwen2.5-1.5B-Instruct": 6.0,
+            "Qwen/Qwen2.5-3B-Instruct": 10.0,
+            "Qwen/Qwen2.5-7B-Instruct": 18.0,
+        }
+
+        required = model_requirements.get(requested_model, 6.0)
+
+        if available_gb >= required:
+            return requested_model
+
+        console.print(
+            f"[yellow]⚠️  内存不足 (可用: {available_gb:.1f}GB, 需要: {required:.1f}GB)[/yellow]"
+        )
+
+        # 按需求从小到大尝试
+        for model, req in sorted(model_requirements.items(), key=lambda x: x[1]):
+            if available_gb >= req:
+                console.print(f"[yellow]→  自动选择更小的模型: {model}[/yellow]")
+                return model
+
+        console.print("[yellow]→  使用最小模型: Qwen/Qwen2.5-0.5B-Instruct[/yellow]")
+        return "Qwen/Qwen2.5-0.5B-Instruct"
+
     def _start_default_engine(self, gateway_port: int = 8889) -> bool:
         """启动默认 LLM 引擎并注册到 Gateway Control Plane
-        
+
         Args:
             gateway_port: Gateway 端口（用于注册）
-            
+
         Returns:
             bool: 是否启动成功
         """
-        # 从环境变量或使用默认模型（改为 1.5B，更好的推理能力）
-        default_model = os.getenv("SAGE_DEFAULT_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
-        
+        # 从环境变量或使用默认模型，再根据内存自动降级
+        requested_model = os.getenv("SAGE_DEFAULT_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+        default_model = self._select_model_by_memory(requested_model)
+
+        if default_model != requested_model:
+            console.print(f"[blue]ℹ️  原请求模型: {requested_model}[/blue]")
+
         console.print(f"[blue]🔧 启动默认 LLM 引擎: {default_model}...[/blue]")
         console.print("   (使用 sageLLM CPU Backend，轻量且高效)")
         
