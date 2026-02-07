@@ -148,22 +148,38 @@ class ChatModeManager(StudioManager):
             time.sleep(2)  # Wait for cleanup
 
             from sage.studio.config.ports import StudioPorts
-            from sage.llm import LLMAPIServer, LLMServerConfig
 
-            config = LLMServerConfig(
-                model=model_path,
-                backend="vllm",
-                host="0.0.0.0",
-                port=StudioPorts.LLM_DEFAULT,
-                gpu_memory_utilization=float(os.getenv("SAGE_STUDIO_LLM_GPU_MEMORY", "0.9")),
-                max_model_len=4096,
-                disable_log_stats=True,
-            )
+            # Use subprocess to start sageLLM engine with the finetuned model
+            serve_cmd = [
+                "sage-llm", "serve-engine",
+                "--model", model_path,
+                "--port", str(StudioPorts.LLM_DEFAULT),
+            ]
 
             # Start new service with finetuned model
             print(f"   启动新模型: {model_path}")
-            self.llm_service = LLMAPIServer(config)
-            success = self.llm_service.start(background=True)
+            proc = subprocess.Popen(
+                serve_cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self.llm_service = proc
+            success = True
+
+            # Wait for service to be ready
+            base_url = f"http://127.0.0.1:{StudioPorts.LLM_DEFAULT}/v1"
+            for _ in range(30):
+                try:
+                    resp = requests.get(f"{base_url}/models", timeout=2)
+                    if resp.status_code == 200:
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+            else:
+                success = False
 
             if success:
                 # Update FinetuneManager's current_model for UI display
@@ -349,7 +365,8 @@ class ChatModeManager(StudioManager):
     def _detect_existing_llm_service(self) -> tuple[bool, str | None]:
         """Detect if LLM service is already running at known ports.
 
-        Checks common LLM ports (8901, 8001, 8000) for existing service.
+        Checks common LLM ports (8901, 8001, 8000) for existing service
+        by probing the OpenAI-compatible /v1/models endpoint.
 
         Returns:
             Tuple of (is_running, base_url) - base_url is set if service found
@@ -364,16 +381,6 @@ class ChatModeManager(StudioManager):
             seen.add(normalized)
             candidates.append(normalized)
 
-        launcher_cls = None
-        try:
-            from sage.llm import LLMLauncher
-
-            launcher_cls = LLMLauncher
-            for service in LLMLauncher.discover_running_services():
-                _add_candidate(service.get("base_url"))
-        except ImportError:
-            launcher_cls = None
-
         # Ports to check in order of preference
         llm_ports = [
             self.llm_port,
@@ -383,11 +390,7 @@ class ChatModeManager(StudioManager):
         ]
 
         for port in llm_ports:
-            if launcher_cls:
-                candidate = launcher_cls.build_base_url(None, port)
-            else:
-                candidate = f"http://127.0.0.1:{port}/v1"
-            _add_candidate(candidate)
+            _add_candidate(f"http://127.0.0.1:{port}/v1")
 
         for candidate in candidates:
             if self._probe_llm_endpoint(candidate):
@@ -444,7 +447,7 @@ class ChatModeManager(StudioManager):
         return (False, None)
 
     # ------------------------------------------------------------------
-    # Local LLM Service helpers (via sageLLM LLMLauncher)
+    # Local LLM Service helpers (via sageLLM CLI subprocess)
     # ------------------------------------------------------------------
     def _select_model_by_memory(self, requested_model: str | None = None) -> str:
         """Select appropriate model based on available memory.
@@ -493,7 +496,7 @@ class ChatModeManager(StudioManager):
     def _start_llm_service(self, model: str | None = None, use_finetuned: bool = False) -> bool:
         """Start local LLM service via sageLLM.
 
-        Uses sageLLM's unified LLMLauncher to start a local LLM HTTP server.
+        Uses sageLLM CLI (sage-llm serve-engine) to start a local LLM HTTP server.
         The server provides OpenAI-compatible API at http://127.0.0.1:{port}/v1
 
         If an LLM service is already running at known ports, it will be reused
@@ -513,12 +516,11 @@ class ChatModeManager(StudioManager):
             console.print("[dim]   跳过启动新服务，将复用现有服务[/dim]")
             return True
 
-        try:
-            from sage.llm import LLMLauncher
-        except ImportError:
+        # Check if sage-llm CLI is available
+        if shutil.which("sage-llm") is None:
             console.print(
-                "[yellow]⚠️  sageLLM LLMLauncher 不可用，跳过本地 LLM 启动[/yellow]\n"
-                "提示：确保已安装 sage-common 包"
+                "[yellow]⚠️  sageLLM 未安装，跳过本地 LLM 启动[/yellow]\n"
+                "提示：pip install isagellm"
             )
             return False
 
@@ -530,73 +532,100 @@ class ChatModeManager(StudioManager):
             console.print(f"[blue]ℹ️  原请求模型: {requested_model}[/blue]")
             console.print(f"[green]✓  实际启动模型: {model_name}[/green]")
 
-        # Get finetuned models list if needed
-        finetuned_models = None
+        # Get finetuned model path if needed
         if use_finetuned and not model:
             finetuned_models = self.list_finetuned_models()
-            if not finetuned_models:
+            if finetuned_models:
+                model_name = finetuned_models[0]["path"]
+                console.print(f"[blue]🎯 使用微调模型: {model_name}[/blue]")
+            else:
                 console.print("[yellow]⚠️  未找到可用的微调模型，使用默认模型[/yellow]")
 
-        # Use unified launcher
-        result = LLMLauncher.launch(
-            model=model_name,
-            port=self.llm_port,
-            gpu_memory=float(os.getenv("SAGE_STUDIO_LLM_GPU_MEMORY", "0.9")),
-            tensor_parallel=int(os.getenv("SAGE_STUDIO_LLM_TENSOR_PARALLEL", "1")),
-            background=True,
-            use_finetuned=use_finetuned,
-            finetuned_models=finetuned_models,
-            verbose=True,
-            check_existing=True,  # Let LLMLauncher also check for duplicates
-        )
+        # Launch sageLLM engine via CLI subprocess
+        console.print(f"[blue]🚀 启动 sageLLM 引擎 (模型: {model_name}, 端口: {self.llm_port})...[/blue]")
 
-        if result.success:
-            self.llm_service = result.server
+        log_dir = get_user_paths().logs_dir
+        log_dir.mkdir(parents=True, exist_ok=True)
+        llm_log = log_dir / "llm_engine.log"
 
-            # Verify engine can actually perform inference
-            console.print("[blue]🔍 验证引擎健康状态...[/blue]")
-            time.sleep(2)  # Give engine time to fully start
+        serve_cmd = [
+            "sage-llm", "serve-engine",
+            "--model", model_name,
+            "--port", str(self.llm_port),
+        ]
 
-            base_url = f"http://127.0.0.1:{self.llm_port}/v1"
-            if self._test_llm_inference(base_url):
-                console.print("[green]✅ 引擎验证成功，可正常推理[/green]")
+        try:
+            log_handle = open(llm_log, "w")
+            proc = subprocess.Popen(
+                serve_cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
 
-                # Start health monitoring
-                self._last_model_name = model_name
-                self._start_health_monitor()
+            # Save PID for later management
+            llm_pid_file = log_dir / "llm_engine.pid"
+            llm_pid_file.write_text(str(proc.pid))
+            self.llm_service = proc  # Track the process
 
-                return True
-            else:
-                console.print("[yellow]⚠️  引擎启动但无法推理，检查是否 OOM...[/yellow]")
-
-                # Wait a bit and check if OOM killed it
-                time.sleep(3)
-                if self._check_oom_killed("sage-llm") or self._check_oom_killed("python"):
-                    console.print("[red]❌ 检测到 OOM (内存不足)，引擎已被系统杀死[/red]")
-
-                    # If not already smallest model, try again with smallest
-                    if model_name != "Qwen/Qwen2.5-0.5B-Instruct":
-                        console.print("[yellow]🔄 尝试使用最小模型 (0.5B) 重启...[/yellow]")
-
-                        # Stop the dead service first
-                        self._stop_llm_service(force=True)
-                        time.sleep(2)
-
-                        # Retry with smallest model
-                        return self._start_llm_service(
-                            model="Qwen/Qwen2.5-0.5B-Instruct",
-                            use_finetuned=False,
-                        )
-                    else:
-                        console.print("[red]❌ 即使最小模型也内存不足，无法启动[/red]")
-                        return False
-                else:
-                    console.print("[yellow]⚠️  引擎无响应但未检测到 OOM，可能配置问题[/yellow]")
-                    return False
-        else:
-            console.print("[yellow]💡 提示：安装推理引擎后可使用本地服务[/yellow]")
-            console.print("   示例：pip install vllm  # 安装 vLLM 引擎")
+            console.print(f"   [green]✓[/green] sageLLM 引擎已启动 (PID: {proc.pid})")
+            console.print(f"   日志: {llm_log}")
+        except FileNotFoundError:
+            console.print("[yellow]⚠️  sage-llm 命令不可用[/yellow]")
+            console.print("   提示：pip install isagellm")
             return False
+        except Exception as exc:
+            console.print(f"[red]❌ 启动 sageLLM 引擎失败: {exc}[/red]")
+            return False
+
+        # Wait for service to be ready
+        console.print("[dim]   等待引擎就绪...[/dim]")
+        base_url = f"http://127.0.0.1:{self.llm_port}/v1"
+        for i in range(60):
+            # Check if process is still alive
+            if proc.poll() is not None:
+                console.print("[red]❌ sageLLM 引擎进程已退出[/red]")
+                console.print(f"   查看日志: {llm_log}")
+                return False
+            if self._probe_llm_endpoint(base_url):
+                break
+            time.sleep(1)
+        else:
+            console.print("[yellow]⚠️  引擎启动超时 (60s)，但进程仍在运行[/yellow]")
+            console.print(f"   查看日志: {llm_log}")
+            # Still try to verify inference below
+
+        # Verify engine can actually perform inference
+        console.print("[blue]🔍 验证引擎健康状态...[/blue]")
+        time.sleep(2)
+
+        if self._test_llm_inference(base_url):
+            console.print("[green]✅ 引擎验证成功，可正常推理[/green]")
+            self._last_model_name = model_name
+            self._start_health_monitor()
+            return True
+        else:
+            console.print("[yellow]⚠️  引擎启动但无法推理，检查是否 OOM...[/yellow]")
+
+            time.sleep(3)
+            if self._check_oom_killed("sage-llm") or self._check_oom_killed("python"):
+                console.print("[red]❌ 检测到 OOM (内存不足)，引擎已被系统杀死[/red]")
+
+                if model_name != "Qwen/Qwen2.5-0.5B-Instruct":
+                    console.print("[yellow]🔄 尝试使用最小模型 (0.5B) 重启...[/yellow]")
+                    self._stop_llm_service(force=True)
+                    time.sleep(2)
+                    return self._start_llm_service(
+                        model="Qwen/Qwen2.5-0.5B-Instruct",
+                        use_finetuned=False,
+                    )
+                else:
+                    console.print("[red]❌ 即使最小模型也内存不足，无法启动[/red]")
+                    return False
+            else:
+                console.print("[yellow]⚠️  引擎无响应但未检测到 OOM，可能配置问题[/yellow]")
+                return False
 
     def _stop_llm_service(self, force: bool = False) -> bool:
         """Stop local LLM service.
@@ -607,34 +636,50 @@ class ChatModeManager(StudioManager):
         # Stop health monitoring first
         self._stop_health_monitor()
 
-        try:
-            from sage.llm import LLMLauncher
-        except ImportError:
-            return True
+        stopped = False
 
-        # First, try to stop via self.llm_service if it exists
+        # First, try to stop via self.llm_service (subprocess.Popen) if it exists
         if self.llm_service is not None:
             console.print("[blue]🛑 停止本地 LLM 服务...[/blue]")
             try:
-                self.llm_service.stop()
+                if hasattr(self.llm_service, "terminate"):
+                    self.llm_service.terminate()
+                    try:
+                        self.llm_service.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        self.llm_service.kill()
+                elif hasattr(self.llm_service, "stop"):
+                    self.llm_service.stop()
                 self.llm_service = None
-                LLMLauncher.clear_service_info()
                 console.print("[green]✅ 本地 LLM 服务已停止[/green]")
-                return True
+                stopped = True
             except Exception as exc:
                 console.print(f"[red]❌ 停止 LLM 服务失败: {exc}[/red]")
-                return False
 
-        # Use LLMLauncher to stop any running service
-        stopped = LLMLauncher.stop(verbose=True, force=force)
+        # Try to stop via PID file
+        log_dir = get_user_paths().logs_dir
+        llm_pid_file = log_dir / "llm_engine.pid"
+        if not stopped and llm_pid_file.exists():
+            try:
+                pid = int(llm_pid_file.read_text().strip())
+                if psutil.pid_exists(pid):
+                    console.print(f"[blue]🛑 停止 LLM 引擎 (PID: {pid})...[/blue]")
+                    os.kill(pid, signal.SIGTERM)
+                    for _ in range(10):
+                        if not psutil.pid_exists(pid):
+                            break
+                        time.sleep(0.5)
+                    if psutil.pid_exists(pid):
+                        os.kill(pid, signal.SIGKILL)
+                    console.print("[green]✅ LLM 引擎已停止[/green]")
+                    stopped = True
+                llm_pid_file.unlink(missing_ok=True)
+            except Exception as e:
+                console.print(f"[yellow]⚠️  清理 LLM PID 文件失败: {e}[/yellow]")
 
-        # If force is enabled, also scan the benchmark range (8901-8910)
+        # If force is enabled, scan LLM port range (8001, 8901-8910)
         if force:
-            for port in range(8901, 8911):
-                # Skip if already checked by LLMLauncher (8901 is in BENCHMARK_LLM)
-                if port == StudioPorts.BENCHMARK_LLM:
-                    continue
-
+            for port in [StudioPorts.LLM_DEFAULT] + list(range(8901, 8911)):
                 try:
                     for conn in psutil.net_connections(kind="inet"):
                         if conn.status == "LISTEN" and conn.laddr.port == port:
@@ -873,7 +918,7 @@ class ChatModeManager(StudioManager):
 
         Looks at the PID file first, then scans candidate ports (current, default,
         fallback, and env override) for a process whose cmdline includes
-        ``sage.llm.gateway.server``/``sage-llm-gateway``. When found, updates
+        ``sagellm_gateway``/``sagellm-gateway``. When found, updates
         ``self.gateway_port`` and rewrites the PID file so subsequent stop/restart
         flows can clean it up.
         """
@@ -922,7 +967,8 @@ class ChatModeManager(StudioManager):
                             cmdline = ""
 
                         if (
-                            "sage.llm.gateway.server" not in cmdline
+                            "sagellm_gateway" not in cmdline
+                            and "sagellm-gateway" not in cmdline
                             and "sage-llm-gateway" not in cmdline
                         ):
                             continue
@@ -987,11 +1033,11 @@ class ChatModeManager(StudioManager):
         env = os.environ.copy()
         env.setdefault("SAGE_GATEWAY_PORT", str(gateway_port))
 
-        console.print(f"[blue]🚀 启动 sage-llm-gateway (端口: {gateway_port})...[/blue]")
+        console.print(f"[blue]🚀 启动 sagellm-gateway (端口: {gateway_port})...[/blue]")
         try:
             log_handle = open(self.gateway_log_file, "w")
             process = subprocess.Popen(
-                [sys.executable, "-m", "sage.llm.gateway.server"],
+                [sys.executable, "-m", "sagellm_gateway.server"],
                 stdin=subprocess.DEVNULL,  # 阻止子进程读取 stdin
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
@@ -1002,8 +1048,8 @@ class ChatModeManager(StudioManager):
         except Exception as exc:
             console.print(f"[red]❌ 启动 gateway 失败: {exc}")
             console.print(
-                "[yellow]提示: 请确保已安装 sage-llm-gateway: "
-                "pip install -e packages/sage-llm-gateway[/yellow]"
+                "[yellow]提示: 请确保已安装 sagellm-gateway: "
+                "pip install isagellm[/yellow]"
             )
             return False
 
@@ -1187,15 +1233,14 @@ class ChatModeManager(StudioManager):
             return []
 
     def _get_used_llm_ports(self) -> set[int]:
+        """Discover LLM ports in use by scanning listening TCP connections."""
         ports: set[int] = set()
+        llm_range = range(StudioPorts.LLM_DEFAULT, StudioPorts.BENCHMARK_LLM + 10)
         try:
-            from sage.llm import LLMLauncher
-
-            for service in LLMLauncher.discover_running_services():
-                service_port = service.get("port")
-                if service_port is not None:
-                    ports.add(int(service_port))
-        except ImportError:
+            for conn in psutil.net_connections(kind="inet"):
+                if conn.status == "LISTEN" and conn.laddr.port in llm_range:
+                    ports.add(conn.laddr.port)
+        except Exception:
             pass
         return ports
 
@@ -1244,11 +1289,13 @@ class ChatModeManager(StudioManager):
         current_port = start_port or self.llm_port  # 8901 default
         used_ports = self._get_used_llm_ports()
 
-        try:
-            from sage.llm import LLMLauncher
-        except ImportError:
-            console.print("[yellow]⚠️  sageLLM 不可用，跳过自动调度[/yellow]")
+        # Check if sage-llm CLI is available
+        if shutil.which("sage-llm") is None:
+            console.print("[yellow]⚠️  sageLLM 未安装，跳过自动调度[/yellow]")
             return False
+
+        log_dir = get_user_paths().logs_dir
+        log_dir.mkdir(parents=True, exist_ok=True)
 
         for model_name, required_mem in candidates:
             # Sort GPUs by free memory descending (to match api_server.py selection logic)
@@ -1263,10 +1310,10 @@ class ChatModeManager(StudioManager):
                     break
 
             if target_gpu:
-                # vLLM gpu_memory_utilization is based on TOTAL memory of the specific GPU
+                # gpu_memory_utilization is based on TOTAL memory of the specific GPU
                 # Add 4GB buffer to utilization to ensure enough space for KV cache + overhead
                 utilization = (required_mem + 4000) / target_gpu["total"]
-                # Cap at 0.95 to be safe (vLLM default is 0.9)
+                # Cap at 0.95 to be safe (default is 0.9)
                 if utilization > 0.95:
                     utilization = 0.95
                 # Min utilization 0.1
@@ -1283,26 +1330,33 @@ class ChatModeManager(StudioManager):
                 )
 
                 try:
-                    result = LLMLauncher.launch(
-                        model=model_name,
-                        port=next_port,
-                        gpu_memory=utilization,
-                        background=True,
-                        verbose=True,
-                        check_existing=True,
+                    llm_log = log_dir / f"llm_engine_{next_port}.log"
+                    serve_cmd = [
+                        "sage-llm", "serve-engine",
+                        "--model", model_name,
+                        "--port", str(next_port),
+                    ]
+                    log_handle = open(llm_log, "w")
+                    proc = subprocess.Popen(
+                        serve_cmd,
+                        stdin=subprocess.DEVNULL,
+                        stdout=log_handle,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=True,
                     )
 
-                    if result.success:
-                        console.print(f"[green]✅ {model_name} 启动成功[/green]")
+                    # Wait briefly to check if process started
+                    time.sleep(3)
+                    if proc.poll() is None:
+                        console.print(f"[green]✅ {model_name} 启动成功 (PID: {proc.pid})[/green]")
                         # Update virtual free memory for the target GPU
                         target_gpu["free"] -= required_mem
                         used_ports.add(next_port)
                         started_count += 1
-                        current_port = next_port + 1  # Increment port for next model
+                        current_port = next_port + 1
 
-                        # If this was the first one, set it as self.llm_service
                         if self.llm_service is None:
-                            self.llm_service = result.server
+                            self.llm_service = proc
                     else:
                         console.print(f"[yellow]⚠️ {model_name} 启动失败，尝试下一个...[/yellow]")
 
@@ -1360,22 +1414,18 @@ class ChatModeManager(StudioManager):
             f"[dim]DEBUG: llm arg={llm}, llm_enabled={self.llm_enabled}, start_llm={start_llm}[/dim]"
         )
 
-        # Force disable LLM if no GPU is detected (vLLM requires GPU)
-        if start_llm and not is_gpu_available():
-            console.print("[yellow]⚠️  未检测到 NVIDIA GPU，自动禁用本地 LLM 服务[/yellow]")
-            console.print("[dim]   提示：vLLM 需要 NVIDIA GPU 支持[/dim]")
-            start_llm = False
-
         # Start local LLM service first (if enabled)
+        # Note: sageLLM supports multiple backends (CPU, CUDA, NPU).
+        # Do NOT gate on GPU availability — sageLLM handles backend selection.
         if start_llm:
             llm_started = False
 
             # Check if user requested specific model or finetuned
             is_specific_request = (llm_model is not None) or use_finetuned
 
-            # Try Auto-Scaling if:
+            # Try GPU Auto-Scaling if:
             # 1. No specific model requested
-            # 2. GPU is available
+            # 2. GPU is available (auto-scaling uses GPU memory info)
             # 3. No existing service running (to avoid conflicts)
             if not is_specific_request and is_gpu_available():
                 is_running, existing_url = self._detect_existing_llm_service()

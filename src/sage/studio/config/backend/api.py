@@ -1887,14 +1887,16 @@ async def send_chat_message(
         if not model_to_use:
             try:
                 from sage.studio.config.ports import StudioPorts
-                from sage.llm import UnifiedInferenceClient
 
-                client = UnifiedInferenceClient.create(
-                    control_plane_url=f"http://localhost:{StudioPorts.GATEWAY}/v1"
+                resp = requests.get(
+                    f"http://localhost:{StudioPorts.GATEWAY}/v1/models", timeout=2
                 )
-                detected = client._get_default_llm_model()
-                if detected and detected != "default":
-                    model_to_use = detected
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("data"):
+                        detected = data["data"][0].get("id")
+                        if detected and detected != "default":
+                            model_to_use = detected
             except Exception:
                 pass
 
@@ -3149,29 +3151,30 @@ def _persist_model_selection(model_name: str, base_url: str) -> str:
 
 
 def _discover_launcher_models() -> list[dict[str, Any]]:
-    try:
-        from sage.llm import LLMLauncher
-    except ImportError:
-        return []
+    """Discover running LLM models by probing known ports."""
+    from sage.studio.config.ports import StudioPorts
 
     models: list[dict[str, Any]] = []
-    for service in LLMLauncher.discover_running_services():
-        # Filter out embedding models
-        if service.get("config", {}).get("engine_kind") == "embedding":
+    # Probe known LLM ports
+    for port in [StudioPorts.LLM_DEFAULT, StudioPorts.BENCHMARK_LLM] + list(range(8902, 8911)):
+        try:
+            resp = requests.get(f"http://127.0.0.1:{port}/v1/models", timeout=1)
+            if resp.status_code == 200:
+                data = resp.json()
+                for m in data.get("data", []):
+                    model_name = m.get("id", f"local-llm-{port}")
+                    if "embedding" in model_name.lower():
+                        continue
+                    models.append(
+                        {
+                            "name": model_name,
+                            "base_url": f"http://127.0.0.1:{port}/v1",
+                            "is_local": True,
+                            "description": "Auto-detected Local Model",
+                        }
+                    )
+        except Exception:
             continue
-
-        model_name = service.get("served_model_name") or service.get("model") or "local-llm"
-        if "embedding" in model_name.lower():
-            continue
-
-        models.append(
-            {
-                "name": model_name,
-                "base_url": service.get("base_url"),
-                "is_local": True,
-                "description": "Auto-detected Local Model",
-            }
-        )
     return models
 
 
@@ -3502,10 +3505,9 @@ def _is_model_name(name: str) -> bool:
 @app.get("/api/llm/status")
 async def get_llm_status():
     """获取当前运行的 LLM 服务状态"""
-    try:
-        from sage.llm import UnifiedInferenceClient
-    except Exception:
-        UnifiedInferenceClient = None  # type: ignore[assignment]
+    # UnifiedInferenceClient is not available in the current sageLLM architecture.
+    # Use direct HTTP probing instead.
+    UnifiedInferenceClient = None  # type: ignore[assignment]
 
     try:
         env_base_url = os.getenv("SAGE_CHAT_BASE_URL", "")

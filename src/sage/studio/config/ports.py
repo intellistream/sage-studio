@@ -19,7 +19,7 @@ class StudioPorts:
     GATEWAY = 8889
 
     # LLM 推理服务端口
-    LLM_DEFAULT = 8001  # vLLM 默认端口
+    LLM_DEFAULT = 8001  # sageLLM 默认端口
     LLM_WSL_FALLBACK = 8901  # WSL2 备用端口
     BENCHMARK_LLM = 8901  # Benchmark 专用
 
