@@ -23,12 +23,12 @@ studio_manager = None
 
 
 def _get_studio_manager():
-    """Lazy load StudioManager to avoid import issues."""
+    """Lazy load ChatModeManager (default manager with full LLM support)."""
     global studio_manager
     if studio_manager is None:
-        from sage.studio.studio_manager import StudioManager
+        from sage.studio.chat_manager import ChatModeManager
 
-        studio_manager = StudioManager()
+        studio_manager = ChatModeManager()
     return studio_manager
 
 
@@ -49,7 +49,7 @@ def start(
     """Start SAGE Studio (frontend + backend)."""
     manager = _get_studio_manager()
     manager.start(
-        port=frontend_port,
+        frontend_port=frontend_port,
         backend_port=backend_port,
         host=host,
         dev=dev,
@@ -107,7 +107,7 @@ def restart(
     console.print("🔄 Restarting Studio...")
     # 🔧 FIX: 重启时停止 LLM 服务（避免端口冲突），但保留 Gateway（共享服务）
     manager.stop(stop_gateway=False, stop_llm=True)
-    manager.start(port=frontend_port, dev=dev, skip_confirm=skip_confirm)
+    manager.start(frontend_port=frontend_port, dev=dev, skip_confirm=skip_confirm)
 
 
 @app.command()

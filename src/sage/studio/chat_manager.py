@@ -1437,6 +1437,7 @@ class ChatModeManager(StudioManager):
             dev=dev,
             backend_port=backend_port,
             auto_gateway=False,  # We manage gateway ourselves
+            auto_llm=False,  # We manage LLM ourselves
             skip_confirm=skip_confirm,  # Pass through for auto-confirm in CI/CD
         )
 
