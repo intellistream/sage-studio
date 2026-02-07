@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,11 @@ class ChatModeManager(StudioManager):
         # Use Qwen2.5-0.5B as default - lightweight for local development
         self.llm_model = os.getenv("SAGE_STUDIO_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
         self.llm_port = StudioPorts.BENCHMARK_LLM  # Unified default port (8901)
+
+        # Health monitoring
+        self._health_monitor_thread: threading.Thread | None = None
+        self._health_monitor_stop = threading.Event()
+        self._last_model_name: str | None = None  # Track which model is running
 
     # ------------------------------------------------------------------
     # Fine-tuned Model Discovery
@@ -213,6 +219,133 @@ class ChatModeManager(StudioManager):
         except Exception:
             return False
 
+    def _test_llm_inference(self, base_url: str | None) -> bool:
+        """Test if LLM can actually perform inference (not just port check).
+
+        Args:
+            base_url: Base URL ending with /v1
+
+        Returns:
+            True if inference succeeds, False if engine is dead/OOM
+        """
+        if not base_url:
+            return False
+
+        normalized = self._normalize_base_url(base_url)
+        if not normalized:
+            return False
+
+        try:
+            # Send a minimal chat request
+            resp = requests.post(
+                f"{normalized}/chat/completions",
+                json={
+                    "model": "test",
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    "max_tokens": 5,
+                    "stream": False,
+                },
+                timeout=15,  # Allow time for inference
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def _check_oom_killed(self, process_name: str = "sage-llm") -> bool:
+        """Check if a process was OOM killed recently.
+
+        Args:
+            process_name: Process name to check in dmesg
+
+        Returns:
+            True if OOM kill detected
+        """
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["dmesg", "-T"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                # Check last 50 lines for recent OOM kills
+                lines = result.stdout.strip().split("\n")[-50:]
+                for line in lines:
+                    if "oom-kill" in line.lower() and process_name in line.lower():
+                        return True
+        except Exception:
+            pass
+        return False
+
+    def _start_health_monitor(self) -> None:
+        """Start background health monitoring thread."""
+        if self._health_monitor_thread and self._health_monitor_thread.is_alive():
+            return  # Already running
+
+        self._health_monitor_stop.clear()
+        self._health_monitor_thread = threading.Thread(
+            target=self._health_monitor_loop,
+            daemon=True,
+            name="LLM-HealthMonitor",
+        )
+        self._health_monitor_thread.start()
+        console.print("[dim]🔍 已启动引擎健康监控[/dim]")
+
+    def _stop_health_monitor(self) -> None:
+        """Stop background health monitoring thread."""
+        if self._health_monitor_thread and self._health_monitor_thread.is_alive():
+            self._health_monitor_stop.set()
+            self._health_monitor_thread.join(timeout=5)
+
+    def _health_monitor_loop(self) -> None:
+        """Background loop to monitor LLM engine health."""
+        consecutive_failures = 0
+        check_interval = 30  # Check every 30 seconds
+
+        while not self._health_monitor_stop.wait(timeout=check_interval):
+            try:
+                base_url = f"http://127.0.0.1:{self.llm_port}/v1"
+
+                # Quick port check first
+                if not self._probe_llm_endpoint(base_url):
+                    consecutive_failures += 1
+                    console.print(f"[yellow]⚠️  引擎健康检查失败 ({consecutive_failures}/3)[/yellow]")
+
+                    if consecutive_failures >= 3:
+                        # Check if OOM killed
+                        if self._check_oom_killed("sage-llm") or self._check_oom_killed("python"):
+                            console.print("[red]❌ 检测到引擎 OOM，尝试重启最小模型...[/red]")
+
+                            # Stop dead service
+                            self._stop_llm_service(force=True)
+                            time.sleep(2)
+
+                            # Restart with smallest model
+                            if self._start_llm_service(model="Qwen/Qwen2.5-0.5B-Instruct"):
+                                console.print("[green]✅ 引擎自动恢复成功[/green]")
+                                consecutive_failures = 0
+                            else:
+                                console.print("[red]❌ 引擎自动恢复失败[/red]")
+                                break  # Stop monitoring
+                        else:
+                            console.print("[yellow]⚠️  引擎意外停止，尝试重启...[/yellow]")
+                            if self._last_model_name and self._start_llm_service(model=self._last_model_name):
+                                console.print("[green]✅ 引擎自动恢复成功[/green]")
+                                consecutive_failures = 0
+                            else:
+                                console.print("[red]❌ 引擎自动恢复失败[/red]")
+                                break
+                else:
+                    # Reset failure counter on success
+                    if consecutive_failures > 0:
+                        console.print("[green]✅ 引擎恢复正常[/green]")
+                    consecutive_failures = 0
+
+            except Exception as e:
+                console.print(f"[yellow]⚠️  健康检查异常: {e}[/yellow]")
+                consecutive_failures += 1
+
     def _detect_existing_llm_service(self) -> tuple[bool, str | None]:
         """Detect if LLM service is already running at known ports.
 
@@ -313,6 +446,50 @@ class ChatModeManager(StudioManager):
     # ------------------------------------------------------------------
     # Local LLM Service helpers (via sageLLM LLMLauncher)
     # ------------------------------------------------------------------
+    def _select_model_by_memory(self, requested_model: str | None = None) -> str:
+        """Select appropriate model based on available memory.
+
+        Args:
+            requested_model: User-requested model name
+
+        Returns:
+            Model name that fits in available memory
+        """
+        import psutil
+
+        # Get available memory in GB
+        mem = psutil.virtual_memory()
+        available_gb = mem.available / (1024**3)
+
+        # Model memory requirements (approximate, in GB)
+        model_requirements = {
+            "Qwen/Qwen2.5-0.5B-Instruct": 2.0,
+            "Qwen/Qwen2.5-1.5B-Instruct": 6.0,
+            "Qwen/Qwen2.5-3B-Instruct": 10.0,
+            "Qwen/Qwen2.5-7B-Instruct": 18.0,
+        }
+
+        requested = requested_model or self.llm_model
+
+        # Check if requested model fits
+        required = model_requirements.get(requested, 6.0)  # Default 6GB if unknown
+
+        if available_gb >= required:
+            return requested
+
+        # Auto-downgrade to smaller model
+        console.print(f"[yellow]⚠️  内存不足 (可用: {available_gb:.1f}GB, 需要: {required:.1f}GB)[/yellow]")
+
+        # Try smaller models in order
+        for model, req in sorted(model_requirements.items(), key=lambda x: x[1]):
+            if available_gb >= req:
+                console.print(f"[yellow]→  自动选择更小的模型: {model}[/yellow]")
+                return model
+
+        # Fallback to smallest model
+        console.print("[yellow]→  使用最小模型: Qwen/Qwen2.5-0.5B-Instruct[/yellow]")
+        return "Qwen/Qwen2.5-0.5B-Instruct"
+
     def _start_llm_service(self, model: str | None = None, use_finetuned: bool = False) -> bool:
         """Start local LLM service via sageLLM.
 
@@ -345,8 +522,13 @@ class ChatModeManager(StudioManager):
             )
             return False
 
-        # Determine which model to use
-        model_name = model or self.llm_model
+        # Determine which model to use with memory-aware selection
+        requested_model = model or self.llm_model
+        model_name = self._select_model_by_memory(requested_model)
+
+        if model_name != requested_model:
+            console.print(f"[blue]ℹ️  原请求模型: {requested_model}[/blue]")
+            console.print(f"[green]✓  实际启动模型: {model_name}[/green]")
 
         # Get finetuned models list if needed
         finetuned_models = None
@@ -370,7 +552,47 @@ class ChatModeManager(StudioManager):
 
         if result.success:
             self.llm_service = result.server
-            return True
+
+            # Verify engine can actually perform inference
+            console.print("[blue]🔍 验证引擎健康状态...[/blue]")
+            time.sleep(2)  # Give engine time to fully start
+
+            base_url = f"http://127.0.0.1:{self.llm_port}/v1"
+            if self._test_llm_inference(base_url):
+                console.print("[green]✅ 引擎验证成功，可正常推理[/green]")
+
+                # Start health monitoring
+                self._last_model_name = model_name
+                self._start_health_monitor()
+
+                return True
+            else:
+                console.print("[yellow]⚠️  引擎启动但无法推理，检查是否 OOM...[/yellow]")
+
+                # Wait a bit and check if OOM killed it
+                time.sleep(3)
+                if self._check_oom_killed("sage-llm") or self._check_oom_killed("python"):
+                    console.print("[red]❌ 检测到 OOM (内存不足)，引擎已被系统杀死[/red]")
+
+                    # If not already smallest model, try again with smallest
+                    if model_name != "Qwen/Qwen2.5-0.5B-Instruct":
+                        console.print("[yellow]🔄 尝试使用最小模型 (0.5B) 重启...[/yellow]")
+
+                        # Stop the dead service first
+                        self._stop_llm_service(force=True)
+                        time.sleep(2)
+
+                        # Retry with smallest model
+                        return self._start_llm_service(
+                            model="Qwen/Qwen2.5-0.5B-Instruct",
+                            use_finetuned=False,
+                        )
+                    else:
+                        console.print("[red]❌ 即使最小模型也内存不足，无法启动[/red]")
+                        return False
+                else:
+                    console.print("[yellow]⚠️  引擎无响应但未检测到 OOM，可能配置问题[/yellow]")
+                    return False
         else:
             console.print("[yellow]💡 提示：安装推理引擎后可使用本地服务[/yellow]")
             console.print("   示例：pip install vllm  # 安装 vLLM 引擎")
@@ -382,6 +604,9 @@ class ChatModeManager(StudioManager):
         Args:
             force: If True, aggressively scan and stop services on related ports.
         """
+        # Stop health monitoring first
+        self._stop_health_monitor()
+
         try:
             from sage.llm import LLMLauncher
         except ImportError:
