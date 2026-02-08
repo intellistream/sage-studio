@@ -11,14 +11,12 @@ import asyncio
 import logging
 import os
 import time
-from enum import Enum
 from typing import AsyncGenerator
-from dataclasses import dataclass
 
 import httpx
 
 from sage.studio.config.ports import StudioPorts
-from sage.libs.agentic.interface.base import Intent, IntentClassifier
+from sage_libs.sage_agentic.intent import IntentClassifier, UserIntent, IntentResult
 from sage_libs.sage_agentic.workflows.router import (
     WorkflowDecision,
     WorkflowRequest,
@@ -33,23 +31,6 @@ from sage.studio.services.knowledge_manager import KnowledgeManager
 from sage.studio.services.memory_integration import get_memory_service
 
 logger = logging.getLogger(__name__)
-
-
-# Studio-specific Intent types (temporary definitions until sage-agentic provides them)
-class UserIntent(str, Enum):
-    """用户意图枚举"""
-    KNOWLEDGE_QUERY = "knowledge_query"
-    SAGE_CODING = "sage_coding"
-    SYSTEM_OPERATION = "system_operation"
-    GENERAL_CHAT = "general_chat"
-
-
-@dataclass
-class IntentResult:
-    """意图识别结果"""
-    intent: UserIntent
-    confidence: float = 1.0
-    entities: dict | None = None
 
 
 class AgentOrchestrator:

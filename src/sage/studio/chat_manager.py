@@ -223,14 +223,23 @@ class ChatModeManager(StudioManager):
         return url.rstrip("/") if url else url
 
     def _probe_llm_endpoint(self, base_url: str | None) -> bool:
-        """Return True if the provided endpoint responds to /models."""
+        """Return True if the provided endpoint responds to /health.
+
+        sageLLM provides /health endpoint (not /v1/models).
+        """
         if not base_url:
             return False
         normalized = self._normalize_base_url(base_url)
         if not normalized:
             return False
         try:
-            resp = requests.get(f"{normalized}/models", timeout=2)
+            # Remove /v1 suffix if present (sageLLM health is at root level)
+            if normalized.endswith('/v1'):
+                base = normalized[:-3]  # Remove last 3 chars: '/v1'
+            else:
+                base = normalized
+            health_url = base + '/health'
+            resp = requests.get(health_url, timeout=2)
             return resp.status_code == 200
         except Exception:
             return False
@@ -774,7 +783,7 @@ class ChatModeManager(StudioManager):
             port = StudioPorts.EMBEDDING_DEFAULT  # 8090
 
         selected_model = model or self._select_embedding_model_from_config()
-        model_name = selected_model or "BAAI/bge-m3"
+        model_name = selected_model or "BAAI/bge-small-zh-v1.5"
 
         # Check if already running (use the new detection method for consistent output)
         is_running, existing_url = self._detect_existing_embedding_service(port)
@@ -805,15 +814,16 @@ class ChatModeManager(StudioManager):
         ]
 
         try:
-            log_handle = open(embedding_log, "w")
-            proc = subprocess.Popen(
-                embedding_cmd,
-                stdin=subprocess.DEVNULL,  # 阻止子进程读取 stdin
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-            # 注意：不关闭 log_handle，让子进程继承并管理它
+            with open(embedding_log, "w") as log_handle:
+                proc = subprocess.Popen(
+                    embedding_cmd,
+                    stdin=subprocess.DEVNULL,  # 阻止子进程读取 stdin
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                # Log handle will be closed by context manager,
+                # but subprocess keeps its copy open
 
             # Save PID for later cleanup
             embedding_pid_file = log_dir / "embedding.pid"
@@ -825,8 +835,15 @@ class ChatModeManager(StudioManager):
             # Wait for service to be ready (up to 180 seconds for model download)
             console.print("   [dim]等待服务就绪 (首次可能需要下载模型)...[/dim]")
             for i in range(180):
+                # Check if process is still alive
+                if proc.poll() is not None:
+                    console.print("[red]❌ Embedding 服务进程已退出[/red]")
+                    console.print(f"   查看日志: {embedding_log}")
+                    return False
+
                 try:
-                    resp = requests.get(f"http://127.0.0.1:{port}/v1/models", timeout=1)
+                    # Use /health endpoint (more reliable than /v1/models)
+                    resp = requests.get(f"http://127.0.0.1:{port}/health", timeout=2)
                     if resp.status_code == 200:
                         console.print("   [green]✓[/green] Embedding 服务已就绪")
                         return True
@@ -835,6 +852,7 @@ class ChatModeManager(StudioManager):
                 time.sleep(1)
 
             console.print("[yellow]⚠️  Embedding 服务启动超时，但进程仍在运行[/yellow]")
+            console.print(f"   查看日志: {embedding_log}")
             return True  # Process started, might just be slow to load model
 
         except Exception as e:

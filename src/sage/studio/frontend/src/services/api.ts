@@ -518,7 +518,13 @@ export interface PipelineRecommendation {
 /**
  * Agent 步骤类型 (与 Task 5 文档对齐)
  */
-export type AgentStepType = 'reasoning' | 'tool_call' | 'tool_result' | 'response'
+export type AgentStepType =
+    | 'reasoning'
+    | 'routing'
+    | 'retrieval'
+    | 'tool_call'
+    | 'tool_result'
+    | 'response'
 
 /**
  * Agent 步骤状态
@@ -724,15 +730,20 @@ export async function sendChatMessage(
     onComplete: () => void,
     callbacks?: Partial<ChatMessageCallbacks>,
     model?: string
-): Promise<void> {
+): Promise<AbortController> {
+    const controller = new AbortController()
+    // Safety timeout: if no data arrives for 120s, abort the stream
+    const STALL_TIMEOUT_MS = 120_000
+
     try {
         // Use provided model or fallback to a default
         const modelName = model || 'sage-default'
-        console.log('[API Debug] Sending chat with model:', modelName)
+        console.log('[API] Sending chat with model:', modelName)
         
         const response = await fetch(`${API_BASE_URL}/chat/v1/chat/completions`, {
             method: 'POST',
             headers: getAuthHeaders(),
+            signal: controller.signal,
             body: JSON.stringify({
                 model: modelName,
                 messages: [{ role: 'user', content: message }],
@@ -752,80 +763,108 @@ export async function sendChatMessage(
 
         const decoder = new TextDecoder()
         let buffer = ''
+        let stallTimer: ReturnType<typeof setTimeout> | null = null
 
-        while (true) {
-            const { done, value } = await reader.read()
+        const resetStallTimer = () => {
+            if (stallTimer) clearTimeout(stallTimer)
+            stallTimer = setTimeout(() => {
+                console.warn('[SSE] Stream stalled for', STALL_TIMEOUT_MS / 1000, 's — aborting')
+                controller.abort()
+            }, STALL_TIMEOUT_MS)
+        }
 
-            if (done) {
-                onComplete()
-                break
-            }
+        resetStallTimer()
 
-            // 解码数据块
-            buffer += decoder.decode(value, { stream: true })
+        try {
+            while (true) {
+                const { done, value } = await reader.read()
 
-            // 处理 SSE 数据
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || '' // 保留不完整的行
+                if (done) {
+                    onComplete()
+                    break
+                }
 
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.substring(6).trim()
-                    console.log('[SSE Debug] Raw SSE line:', line)
-                    console.log('[SSE Debug] Extracted data:', data)
+                resetStallTimer()
 
-                    if (data === '[DONE]') {
-                        console.log('[SSE Debug] Received [DONE], completing stream')
-                        onComplete()
-                        return
-                    }
+                buffer += decoder.decode(value, { stream: true })
 
-                    try {
-                        const parsed = JSON.parse(data)
-                        console.log('[SSE Debug] Parsed JSON:', JSON.stringify(parsed, null, 2))
+                // Split on double-newline (SSE event boundary) or single newline
+                const lines = buffer.split('\n')
+                buffer = lines.pop() || ''
 
-                        // 处理推理步骤事件 (旧版)
-                        if (parsed.type === 'reasoning_step' && callbacks?.onReasoningStep) {
-                            callbacks.onReasoningStep(parsed.step)
-                            continue
+                for (const line of lines) {
+                    const trimmed = line.trim()
+                    if (!trimmed) continue
+
+                    // Handle "data: ..." lines
+                    if (trimmed.startsWith('data:')) {
+                        // Normalise "data:X" and "data: X"
+                        const data = trimmed.startsWith('data: ')
+                            ? trimmed.substring(6).trim()
+                            : trimmed.substring(5).trim()
+
+                        if (data === '[DONE]') {
+                            onComplete()
+                            if (stallTimer) clearTimeout(stallTimer)
+                            return controller
                         }
 
-                        // 处理推理步骤更新事件 (旧版)
-                        if (parsed.type === 'reasoning_step_update' && callbacks?.onReasoningStepUpdate) {
-                            callbacks.onReasoningStepUpdate(parsed.step_id, parsed.updates)
-                            continue
-                        }
+                        if (!data) continue
 
-                        // 处理推理内容追加事件 (旧版)
-                        if (parsed.type === 'reasoning_content' && callbacks?.onReasoningContent) {
-                            callbacks.onReasoningContent(parsed.step_id, parsed.content)
-                            continue
-                        }
+                        try {
+                            const parsed = JSON.parse(data)
 
-                        // 处理推理结束事件 (旧版)
-                        if (parsed.type === 'reasoning_end' && callbacks?.onReasoningEnd) {
-                            callbacks.onReasoningEnd()
-                            continue
-                        }
+                            // Handle error objects from backend
+                            if (parsed.error) {
+                                onError(new Error(parsed.error))
+                                if (stallTimer) clearTimeout(stallTimer)
+                                return controller
+                            }
 
-                        // 处理标准 OpenAI 格式的内容
-                        const content = parsed.choices?.[0]?.delta?.content
-                        console.log('[SSE Debug] Received content:', content, 'Full parsed:', parsed)
-                        if (content) {
-                            console.log('[SSE Debug] Calling onChunk with:', content)
-                            onChunk(content)
-                        } else {
-                            console.log('[SSE Debug] No content in delta, choices:', parsed.choices)
+                            // Legacy reasoning step events
+                            if (parsed.type === 'reasoning_step' && callbacks?.onReasoningStep) {
+                                callbacks.onReasoningStep(parsed.step)
+                                continue
+                            }
+                            if (parsed.type === 'reasoning_step_update' && callbacks?.onReasoningStepUpdate) {
+                                callbacks.onReasoningStepUpdate(parsed.step_id, parsed.updates)
+                                continue
+                            }
+                            if (parsed.type === 'reasoning_content' && callbacks?.onReasoningContent) {
+                                callbacks.onReasoningContent(parsed.step_id, parsed.content)
+                                continue
+                            }
+                            if (parsed.type === 'reasoning_end' && callbacks?.onReasoningEnd) {
+                                callbacks.onReasoningEnd()
+                                continue
+                            }
+
+                            // Standard OpenAI format
+                            const content = parsed.choices?.[0]?.delta?.content
+                            if (content) {
+                                onChunk(content)
+                            }
+                        } catch {
+                            // Not valid JSON — ignore (e.g. partial line)
                         }
-                    } catch {
-                        console.warn('Failed to parse SSE data:', data)
                     }
                 }
             }
+        } finally {
+            if (stallTimer) clearTimeout(stallTimer)
         }
     } catch (error) {
-        onError(error instanceof Error ? error : new Error(String(error)))
+        if (stallTimer) clearTimeout(stallTimer)
+        if (controller.signal.aborted) {
+            // User manually aborted - treat as normal completion, not error
+            console.log('[API] Stream aborted by user')
+            onComplete()
+        } else {
+            onError(error instanceof Error ? error : new Error(String(error)))
+        }
     }
+
+    return controller
 }
 
 // ==================== Multi-Agent SSE 解析器 ====================

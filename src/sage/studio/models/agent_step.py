@@ -19,6 +19,8 @@ class StepType(str, Enum):
     """
 
     REASONING = "reasoning"  # 推理思考
+    ROUTING = "routing"  # 意图与路由判断
+    RETRIEVAL = "retrieval"  # 检索过程
     TOOL_CALL = "tool_call"  # 工具调用
     TOOL_RESULT = "tool_result"  # 工具返回
     RESPONSE = "response"  # 最终回复

@@ -47,6 +47,7 @@ dependencies = [
     # Agentic dependencies (independent packages)
     "isage-agentic>=0.1.0",
     "isage-sias>=0.1.0",
+    "isage-libs-intent>=0.1.0",  # Intent recognition (L3)
 
     # Fine-tune dependencies (independent package)
     "isage-finetune>=0.1.0",

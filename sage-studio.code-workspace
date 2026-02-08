@@ -78,6 +78,9 @@
 		},
 		{
 			"path": "../sagellm-control-plane-benchmark"
+		},
+		{
+			"path": "../sage-libs-intent"
 		}
 	],
 	"settings": {

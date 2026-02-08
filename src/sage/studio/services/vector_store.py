@@ -94,8 +94,8 @@ class VectorStore:
     def __init__(
         self,
         collection_name: str,
-        embedding_model: str = "BAAI/bge-m3",
-        embedding_dim: int = 1024,
+        embedding_model: str = "BAAI/bge-small-zh-v1.5",
+        embedding_dim: int = 512,
         persist_dir: str | Path | None = None,
         embedder: EmbeddingProtocol | None = None,
     ):

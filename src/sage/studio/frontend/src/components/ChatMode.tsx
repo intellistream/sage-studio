@@ -35,6 +35,7 @@ import {
     PanelLeft,
     Mic,
     ChevronDown,
+    Square,
 } from 'lucide-react'
 import { SageIcon } from './SageIcon'
 import { useChatStore, type ChatMessage, type ReasoningStep } from '../store/chatStore'
@@ -150,10 +151,10 @@ function ModelSelector({
 
     const currentModelName = llmStatus?.model_name
     const currentModel = llmStatus?.available_models?.find(m => m.name === currentModelName)
-    
+
     const items = llmStatus?.available_models?.map(model => {
         const isSelected = model.name === currentModelName
-        
+
         return {
             key: model.name,
             label: (
@@ -252,17 +253,21 @@ function ChatInput({
     value,
     onChange,
     onSend,
+    onStop,
     onUpload,
     disabled,
     isSending,
+    isStreaming,
     isMobile = false,
 }: {
     value: string
     onChange: (value: string) => void
     onSend: () => void
+    onStop?: () => void
     onUpload: () => void
     disabled: boolean
     isSending: boolean
+    isStreaming?: boolean
     isMobile?: boolean
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -280,9 +285,21 @@ function ChatInput({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
-            onSend()
+            if (isStreaming && onStop) {
+                onStop()
+            } else if (!isSending && !disabled) {
+                onSend()
+            }
         }
     }
+
+    // Determine if we should show stop button
+    const showStop = isStreaming && !!onStop
+
+    // Debug log
+    useEffect(() => {
+        console.log('[ChatInput] State:', { isStreaming, hasOnStop: !!onStop, showStop, isSending })
+    }, [isStreaming, onStop, showStop, isSending])
 
     return (
         <div className={`w-full mx-auto ${isMobile ? 'px-3 pb-3' : 'max-w-[830px] px-4 pb-6'}`}>
@@ -304,8 +321,8 @@ function ChatInput({
                     onKeyDown={handleKeyDown}
                     onFocus={() => setIsFocused(true)}
                     onBlur={() => setIsFocused(false)}
-                    placeholder="Ask SAGE anything..."
-                    disabled={disabled}
+                    placeholder={isStreaming ? "Generating answer..." : "Ask SAGE anything..."}
+                    disabled={disabled && !showStop}
                     rows={1}
                     className={`
                         w-full bg-transparent resize-none outline-none
@@ -323,7 +340,8 @@ function ChatInput({
                         <Tooltip title="Upload files">
                             <button
                                 onClick={onUpload}
-                                className={`rounded-full hover:bg-[--gemini-hover-bg] transition-colors text-[--gemini-text-secondary] ${isMobile ? 'p-2' : 'p-2.5'}`}
+                                disabled={showStop}
+                                className={`rounded-full hover:bg-[--gemini-hover-bg] transition-colors text-[--gemini-text-secondary] ${isMobile ? 'p-2' : 'p-2.5'} ${showStop ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
                                 <Plus size={isMobile ? 18 : 20} />
                             </button>
@@ -340,20 +358,22 @@ function ChatInput({
                         )}
                     </div>
 
-                    {/* Right: Send button */}
+                    {/* Right: Send/Stop button */}
                     <button
-                        onClick={onSend}
-                        disabled={!value.trim() || disabled}
+                        onClick={showStop ? onStop : onSend}
+                        disabled={(!value.trim() && !showStop) || (disabled && !showStop)}
                         className={`
                             rounded-full transition-all duration-200
                             ${isMobile ? 'p-2' : 'p-2.5'}
-                            ${value.trim() && !disabled
+                            ${(value.trim() || showStop) && !(disabled && !showStop)
                                 ? 'bg-[--gemini-text-primary] text-[--gemini-main-bg] hover:opacity-80 active:scale-95'
                                 : 'bg-[--gemini-border] text-[--gemini-text-secondary]/40 cursor-not-allowed'
                             }
                         `}
                     >
-                        {isSending ? (
+                        {showStop ? (
+                            <Square size={isMobile ? 16 : 18} fill="currentColor" />
+                        ) : isSending ? (
                             <Loader size={isMobile ? 18 : 20} className="animate-spin" />
                         ) : (
                             <Send size={isMobile ? 18 : 20} />
@@ -484,6 +504,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     const { setNodes, setEdges } = useFlowStore()
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
+    const abortControllerRef = useRef<AbortController | null>(null)
     const [isSending, setIsSending] = useState(false)
     const [isConverting, setIsConverting] = useState(false)
     const [recommendationSummary, setRecommendationSummary] = useState<string | null>(null)
@@ -518,26 +539,26 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
         try {
             // Show loading message
             const hideLoading = antMessage.loading(`切换到模型: ${modelName}...`, 0)
-            
+
             try {
                 await selectLLMModel(modelName, baseUrl)
                 console.log(`✅ Model selection API called for: ${modelName}`)
-                
+
                 // Wait for backend config to update (retry up to 5 times with 1s interval)
                 let retries = 5
                 let modelNameMatched = false
-                
+
                 while (retries > 0) {
                     await new Promise(resolve => setTimeout(resolve, 1000))
                     const status = await getLLMStatus()
                     console.log(`🔄 Status check: model_name=${status.model_name}, target=${modelName}`)
-                    
+
                     // Success: model_name matches (don't require healthy yet)
                     if (status.model_name === modelName) {
                         modelNameMatched = true
                         setLlmStatus(status)
                         hideLoading()
-                        
+
                         const currentModel = status.available_models?.find(m => m.name === modelName)
                         if (currentModel?.healthy) {
                             antMessage.success(`已切换到: ${modelName}`)
@@ -546,20 +567,20 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                         }
                         break
                     }
-                    
+
                     retries--
                 }
-                
+
                 // Even if model_name doesn't match yet, force update UI to show the selection
                 if (!modelNameMatched) {
                     const finalStatus = await getLLMStatus()
                     console.warn(`⚠️ Model name mismatch: expected ${modelName}, got ${finalStatus.model_name}`)
-                    
+
                     // Force update the status to show the selected model
                     finalStatus.model_name = modelName
                     finalStatus.base_url = baseUrl
                     setLlmStatus(finalStatus)
-                    
+
                     hideLoading()
                     antMessage.warning(`模型已配置: ${modelName}（后台加载中...）`)
                 }
@@ -683,15 +704,12 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
             setStreamingMessageId(assistantMessageId)
 
             const selectedModel = llmStatus?.model_name || 'sage-default'
-            console.log('[ChatMode Debug] Selected model:', selectedModel, 'from llmStatus:', llmStatus)
 
-            await sendChatMessage(
+            const controller = await sendChatMessage(
                 userMessageContent,
                 sessionId,
                 (chunk: string) => {
-                    console.log('[ChatMode Debug] onChunk callback received chunk:', chunk)
                     appendToMessage(sessionId, assistantMessageId, chunk)
-                    console.log('[ChatMode Debug] Called appendToMessage with:', { sessionId, assistantMessageId, chunkLength: chunk.length })
                 },
                 (error: Error) => {
                     console.error('Streaming error:', error)
@@ -726,11 +744,31 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                 },
                 selectedModel // Pass the selected model with fallback
             )
+            abortControllerRef.current = controller
         } catch (error) {
             console.error('Send message error:', error)
             antMessage.error('Failed to send message')
         } finally {
             setIsSending(false)
+            abortControllerRef.current = null
+        }
+    }
+
+    const handleStopGeneration = () => {
+        console.log('[ChatMode] handleStopGeneration called', {
+            hasController: !!abortControllerRef.current,
+            isStreaming,
+            streamingMessageId
+        })
+        if (abortControllerRef.current) {
+            console.log('[ChatMode] Aborting stream...')
+            abortControllerRef.current.abort()
+            abortControllerRef.current = null
+            setIsStreaming(false)
+            setStreamingMessageId(null)
+            antMessage.info('Generation stopped')
+        } else {
+            console.warn('[ChatMode] No controller to abort')
         }
     }
 
@@ -1022,9 +1060,11 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                         value={currentInput}
                         onChange={setCurrentInput}
                         onSend={handleSendMessage}
+                        onStop={handleStopGeneration}
                         onUpload={() => setIsUploadVisible(true)}
-                        disabled={isStreaming || isSending}
-                        isSending={isSending || isStreaming}
+                        disabled={isSending}
+                        isSending={isSending}
+                        isStreaming={isStreaming}
                         isMobile={isMobile}
                     />
                 </div>

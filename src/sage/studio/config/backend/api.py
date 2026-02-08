@@ -1662,16 +1662,15 @@ def _save_session(user_id: str, session_id: str, data: dict):
 async def proxy_chat_completions(
     request: Request, current_user: Annotated[User, Depends(get_current_user)]
 ):
-    """Proxy for OpenAI-compatible chat completions used by Studio frontend"""
+    """Chat completions with AgentOrchestrator (RAG-enabled) in OpenAI-compatible format"""
     from datetime import datetime
-
-    import httpx
 
     try:
         # Get the raw body
         body = await request.json()
         session_id = body.get("session_id")
         user_id = str(current_user.id)
+        is_stream = body.get("stream", True)
 
         # Extract user message from request
         messages = body.get("messages", [])
@@ -1682,6 +1681,9 @@ async def proxy_chat_completions(
                 if msg.get("role") == "user":
                     user_message_content = msg.get("content")
                     break
+
+        if not user_message_content:
+            raise HTTPException(status_code=400, detail="No user message found")
 
         # Load or create session
         session_data = None
@@ -1701,7 +1703,7 @@ async def proxy_chat_completions(
             }
 
         # Save user message to session
-        if session_data and user_message_content:
+        if session_data:
             user_msg = {
                 "role": "user",
                 "content": user_message_content,
@@ -1711,99 +1713,80 @@ async def proxy_chat_completions(
             session_data["last_active"] = datetime.now().isoformat()
             _save_session(user_id, session_id, session_data)
 
-        # Collect assistant response
+        # Use AgentOrchestrator for RAG-powered responses
+        orchestrator = get_orchestrator()
+        history = [{"role": msg["role"], "content": msg["content"]} for msg in session_data["messages"][-5:]] if session_data else []
+
         collected_content = []
 
-        # Resolve engine URL dynamically based on selected model
-        engine_base_url = _resolve_engine_url(body.get("model"))
-        print(f"[chat] Resolved engine URL: {engine_base_url} for model: {body.get('model')}")
-
-        # We use a stream to support SSE
+        # Stream with OpenAI-compatible format
         async def event_generator():
-            try:
-                # Use timeout=None for streaming to avoid timeout during generation
-                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None)) as client:
-                    async with client.stream(
-                        "POST",
-                        f"{engine_base_url}/chat/completions",
-                        json=body,
-                    ) as response:
-                        if response.status_code != 200:
-                            error_msg = await response.aread()
-                            yield f"data: {json.dumps({'error': f'Engine error: {response.status_code} - {error_msg.decode()}'})}\n\n"
-                            return
+            import time
+            from sage.studio.models.agent_step import AgentStep
 
-                        # Process streaming response - skip event metadata, extract only content
-                        async for line in response.aiter_lines():
-                            if not line.strip():
-                                continue
-                                
-                            if line.startswith("data: "):
-                                data = line[6:].strip()
-                                
-                                if data == "[DONE]":
-                                    yield "data: [DONE]\n\n"
-                                    continue
-                                
-                                if not data:
-                                    continue
-                                
-                                try:
-                                    parsed = json.loads(data)
-                                    content = (
-                                        parsed.get("choices", [{}])[0]
-                                        .get("delta", {})
-                                        .get("content")
-                                    )
-                                    
-                                    if not content:
-                                        # Check for finish_reason
-                                        finish_reason = parsed.get("choices", [{}])[0].get("finish_reason")
-                                        if finish_reason:
-                                            yield line + "\n"
-                                        continue
-                                    
-                                    # Skip sageLLM event metadata (event='start', event='end')
-                                    if "event='start'" in content or "event='end'" in content:
-                                        continue
-                                        
-                                    # Extract actual text from sageLLM delta events
-                                    if "event='delta'" in content and "chunk='" in content:
-                                        import re
-                                        # Match chunk='...' handling escaped quotes
-                                        match = re.search(r"chunk='((?:[^'\\\\]|\\\\.)*)'", content)
-                                        if match:
-                                            chunk_text = match.group(1)
-                                            # Remove prompt prefix
-                                            if "Assistant:" in chunk_text:
-                                                chunk_text = chunk_text.split("Assistant:")[-1]
-                                            # Clean up escape sequences
-                                            chunk_text = chunk_text.replace("\\n", " ").replace("\\r", "").strip()
-                                            
-                                            if chunk_text:
-                                                collected_content.append(chunk_text)
-                                                # Create clean response
-                                                clean_chunk = {
-                                                    "id": parsed.get("id"),
-                                                    "object": "chat.completion.chunk",
-                                                    "created": parsed.get("created"),
-                                                    "model": parsed.get("model"),
-                                                    "choices": [{
-                                                        "index": 0,
-                                                        "delta": {"content": chunk_text},
-                                                        "finish_reason": None
-                                                    }]
-                                                }
-                                                yield f"data: {json.dumps(clean_chunk)}\n\n"
-                                        continue
-                                    
-                                    # If no special formatting, pass through
-                                    if "event=" not in content and "chunk=" not in content:
-                                        collected_content.append(content)
-                                        yield line + "\n"
-                                        
-                                except Exception:
-                                    pass
+            msg_id = f"chatcmpl-{int(time.time())}"
+            created = int(time.time())
+            model = body.get("model", "sage-rag")
+
+            try:
+                async for item in orchestrator.process_message(
+                    message=user_message_content,
+                    session_id=session_id,
+                    history=history,
+                    should_index=False,
+                ):
+                    if isinstance(item, str):
+                        # Text content - send as delta
+                        collected_content.append(item)
+                        chunk = {
+                            "id": msg_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": item},
+                                "finish_reason": None,
+                            }],
+                        }
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    elif isinstance(item, AgentStep):
+                        # Send AgentStep as special chunk (for frontend to display RAG process)
+                        step_chunk = {
+                            "id": msg_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {
+                                    "agent_step": {
+                                        "step_id": item.step_id,
+                                        "type": item.type.value if hasattr(item.type, "value") else str(item.type),
+                                        "content": item.content,
+                                        "status": item.status.value if hasattr(item.status, "value") else str(item.status),
+                                        "metadata": item.metadata,
+                                    }
+                                },
+                                "finish_reason": None,
+                            }],
+                        }
+                        yield f"data: {json.dumps(step_chunk)}\n\n"
+
+                # Send finish chunk
+                finish_chunk = {
+                    "id": msg_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop",
+                    }],
+                }
+                yield f"data: {json.dumps(finish_chunk)}\n\n"
+                yield "data: [DONE]\n\n"
 
                 # Save assistant message after streaming completes
                 if session_data and collected_content:
@@ -1816,18 +1799,10 @@ async def proxy_chat_completions(
                     session_data["last_active"] = datetime.now().isoformat()
                     _save_session(user_id, session_id, session_data)
 
-            except httpx.ConnectError as e:
-                error_msg = f"无法连接到 LLM 引擎 ({engine_base_url})。请确保引擎服务已启动。"
-                print(f"[chat] Connection error: {e}")
-                yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                yield "data: [DONE]\n\n"
-            except httpx.ReadTimeout as e:
-                error_msg = f"LLM 引擎响应超时 ({engine_base_url})。引擎可能已挂起，请重启。"
-                print(f"[chat] Read timeout: {e}")
-                yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                yield "data: [DONE]\n\n"
             except Exception as e:
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                error_msg = f"AgentOrchestrator error: {str(e)}"
+                print(f"[chat] Error: {e}")
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 yield "data: [DONE]\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -3332,7 +3307,7 @@ async def select_llm_model(request: SelectModelRequest):
 
         # 判断是否是本地模型（需要启动引擎）
         is_local = _is_loopback_url(request.base_url)
-        
+
         if is_local and _is_model_name(request.model_name):
             # Check if the requested model is already running at any known port
             for check_port in [9001, 8901, 8001]:
@@ -3361,7 +3336,7 @@ async def select_llm_model(request: SelectModelRequest):
 
             # 本地 Hugging Face 模型，需要通过 sage-llm serve-engine 启动
             print(f"Detected local model: {request.model_name}, starting engine...")
-            
+
             try:
                 # 使用 subprocess 调用 sage-llm serve-engine
                 import subprocess
@@ -3372,7 +3347,7 @@ async def select_llm_model(request: SelectModelRequest):
                     "--port", str(engine_port),
                     "--host", "0.0.0.0",
                 ]
-                
+
                 # 后台启动引擎
                 subprocess.Popen(
                     cmd,
@@ -3380,13 +3355,13 @@ async def select_llm_model(request: SelectModelRequest):
                     stderr=subprocess.DEVNULL,
                     start_new_session=True
                 )
-                
+
                 # 等待引擎注册（最多30秒）
                 import time
                 actual_engine_base_url = f"http://127.0.0.1:{engine_port}/v1"
                 for i in range(30):
                     await asyncio.sleep(1)
-                    
+
                     # Check if engine is directly reachable first
                     try:
                         probe_resp = requests.get(
@@ -3409,7 +3384,7 @@ async def select_llm_model(request: SelectModelRequest):
                                 }
                     except Exception:
                         pass
-                    
+
                     # 每5秒尝试向 Gateway 注册
                     if (i + 1) % 5 == 0:
                         try:
@@ -3423,19 +3398,19 @@ async def select_llm_model(request: SelectModelRequest):
                                 "engine_kind": "llm",
                                 "metadata": {"source": "studio_model_select", "model": request.model_name},
                             }
-                            
+
                             register_response = requests.post(
                                 register_url,
                                 json=register_payload,
                                 timeout=2,
                                 proxies={"http": None, "https": None}
                             )
-                            
+
                             if register_response.status_code == 200:
                                 print(f"Engine {engine_id} registered with Gateway")
                         except Exception:
                             pass
-                
+
                 # 超时但继续返回成功（引擎可能仍在后台加载）
                 # Update env to engine port so chat proxy will find it when ready
                 os.environ["SAGE_CHAT_BASE_URL"] = actual_engine_base_url
@@ -3449,7 +3424,7 @@ async def select_llm_model(request: SelectModelRequest):
                     "engine_started": True,
                     "note": "引擎正在后台加载，请稍后刷新"
                 }
-                
+
             except Exception as e:
                 print(f"Failed to start engine: {e}")
                 return {
@@ -3457,7 +3432,7 @@ async def select_llm_model(request: SelectModelRequest):
                     "message": f"配置已更新，但引擎启动失败: {e}",
                     "engine_started": False
                 }
-        
+
         else:
             # 外部 API 或已运行的服务，只需注册
             try:
@@ -3481,7 +3456,7 @@ async def select_llm_model(request: SelectModelRequest):
                 print(f"Failed to register model with Control Plane: {e}")
 
             return {"status": "success", "message": f"已切换到模型: {request.model_name}"}
-            
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"切换模型失败: {str(e)}")
 
@@ -3492,11 +3467,11 @@ def _is_model_name(name: str) -> bool:
     # 例如: Qwen/Qwen2.5-7B-Instruct, gpt-3.5-turbo
     if not name:
         return False
-    
+
     # 如果包含 '/' 但不是 URL，则是 HF 模型
     if '/' in name and not name.startswith(('http://', 'https://')):
         return True
-    
+
     # 常见的本地模型模式
     local_patterns = ['Qwen', 'llama', 'mistral', 'tinyllama', 'phi', 'gemma']
     return any(pattern.lower() in name.lower() for pattern in local_patterns)
@@ -3573,7 +3548,7 @@ async def get_llm_status():
                 try:
                     health_resp = requests.get(_build_health_url(probe_url), timeout=2)
                     status["healthy"] = health_resp.status_code == 200
-                    
+
                     # Detect engine type from health response
                     try:
                         health_data = health_resp.json()
@@ -3605,7 +3580,7 @@ async def get_llm_status():
         # 复用前面读取的配置，避免重复加载
         available_models = []
         seen_models = {}  # 用于去重: (model_name, base_url) -> model_entry
-        
+
         # 1. 从 Gateway Control Plane 获取已注册的引擎
         try:
             engine_list_response = requests.get(
@@ -3624,13 +3599,13 @@ async def get_llm_status():
                         continue
                     if engine.get("state") != "READY":
                         continue
-                    
+
                     # 构建可用模型条目
                     model_name_from_engine = engine.get("model_id") or engine.get("engine_id", "unknown")
                     host = engine.get("host", "localhost")
                     port = engine.get("port", 9001)
                     base_url = f"http://{host}:{port}/v1"
-                    
+
                     # 去重：同一个 (model_name, base_url) 只保留第一个
                     model_key = (model_name_from_engine, base_url)
                     if model_key not in seen_models:
@@ -3649,7 +3624,7 @@ async def get_llm_status():
                                     device_info = "CPU"
                         except:
                             pass
-                        
+
                         model_entry = {
                             "name": model_name_from_engine,
                             "base_url": base_url,
@@ -3664,7 +3639,7 @@ async def get_llm_status():
                         seen_models[model_key] = model_entry
         except Exception as e:
             print(f"Warning: Failed to fetch engines from Gateway: {e}")
-        
+
         # 2. 从配置文件加载模型（去重，避免与 Gateway 引擎重复）
         for model in config_models:
             # Filter out embedding models
@@ -3675,7 +3650,7 @@ async def get_llm_status():
                 continue
             if "embedding" in model.get("description", "").lower():
                 continue
-            
+
             # 去重：检查是否已存在相同的 (model_name, base_url)
             model_key = (model.get("name"), model.get("base_url"))
             if model_key not in seen_models:
@@ -3687,12 +3662,12 @@ async def get_llm_status():
             entry_url = entry.get("base_url")
             entry_name = entry.get("name")
             model_key = (entry_name, entry_url)
-            
+
             # 如果已存在，更新现有条目
             if model_key in seen_models:
                 seen_models[model_key].update({k: v for k, v in entry.items() if v is not None})
                 return
-            
+
             # 兼容旧逻辑：检查 URL 匹配
             for existing in available_models:
                 existing_url = existing.get("base_url")
@@ -3701,55 +3676,13 @@ async def get_llm_status():
                 if urls_match or (not entry_url and not existing_url and names_match):
                     existing.update({k: v for k, v in entry.items() if v is not None})
                     return
-            
+
             # 新条目
             available_models.append(entry)
             seen_models[model_key] = entry
 
         for detected in _discover_launcher_models():
             _merge_model(detected)
-
-        if not available_models:
-            default_base = f"http://127.0.0.1:8901/v1"  # Benchmark LLM default port
-            defaults = [
-                {
-                    "name": "Qwen/Qwen2.5-0.5B-Instruct",
-                    "base_url": default_base,
-                    "is_local": True,
-                    "description": "CPU-friendly (0.5B, ~2GB RAM)",
-                    "hardware": "CPU",
-                },
-                {
-                    "name": "Qwen/Qwen2.5-1.5B-Instruct",
-                    "base_url": default_base,
-                    "is_local": True,
-                    "description": "CPU-friendly (1.5B, ~4GB RAM)",
-                    "hardware": "CPU",
-                },
-                {
-                    "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-                    "base_url": default_base,
-                    "is_local": True,
-                    "description": "Minimal CPU model (1.1B, ~2.5GB RAM)",
-                    "hardware": "CPU",
-                },
-                {
-                    "name": "Qwen/Qwen2.5-3B-Instruct",
-                    "base_url": default_base,
-                    "is_local": True,
-                    "description": "Balanced model (3B, ~8GB RAM, CPU or GPU)",
-                    "hardware": "CPU/GPU",
-                },
-                {
-                    "name": "Qwen/Qwen2.5-7B-Instruct",
-                    "base_url": default_base,
-                    "is_local": True,
-                    "description": "Standard model (7B, ~16GB RAM, GPU recommended)",
-                    "hardware": "GPU",
-                },
-            ]
-            for entry in defaults:
-                _merge_model(entry)
 
         # NOTE: Cloud/OpenAI models are NOT automatically added to available_models list
         # They will only appear if:
@@ -3758,6 +3691,18 @@ async def get_llm_status():
         # This ensures local models are preferred by default
 
         import concurrent.futures
+
+        def _fetch_model_ids(base_url: str, headers: dict[str, str]) -> list[str]:
+            try:
+                models_resp = requests.get(f"{base_url}/models", headers=headers, timeout=2)
+                if models_resp.status_code != 200:
+                    return []
+                models_data = models_resp.json()
+                model_entries = models_data.get("data") or []
+                return [entry.get("id", "") for entry in model_entries if entry.get("id")]
+            except Exception as exc:
+                print(f"Warning: Failed to fetch model ids from {base_url}: {exc}")
+                return []
 
         def evaluate_model(model: dict[str, Any]) -> dict[str, Any]:
             entry = dict(model)
@@ -3774,10 +3719,24 @@ async def get_llm_status():
                 return entry
 
             entry["healthy"] = _probe_llm_endpoint(base, headers=headers)
+            if entry["healthy"]:
+                model_ids = _fetch_model_ids(base, headers)
+                if model_ids:
+                    entry["model_ids"] = model_ids
+                    if entry.get("name") not in model_ids:
+                        entry["healthy"] = False
             return entry
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             available_models = list(executor.map(evaluate_model, available_models))
+
+        # De-duplicate after resolving live model ids
+        deduped_models = {}
+        for model in available_models:
+            model_key = (model.get("name"), model.get("base_url"))
+            if model_key not in deduped_models:
+                deduped_models[model_key] = model
+        available_models = list(deduped_models.values())
 
         # Save explicit env settings to check later
         explicit_env_model = os.getenv("SAGE_CHAT_MODEL", "")
@@ -3788,7 +3747,7 @@ async def get_llm_status():
         # BUT: if user just selected a model via select_llm_model (env vars are set),
         # don't override with preferred_model logic.
         preferred_model: dict[str, Any] | None = None
-        
+
         if not has_explicit_env:
             # Only auto-select preferred model if no explicit env vars
             for model in available_models:
