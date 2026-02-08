@@ -169,7 +169,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install ruff mypy
+          pip install ruff
 
       - name: Run Ruff
         run: |
@@ -180,8 +180,3 @@ jobs:
         run: |
           echo "🎨 Checking code formatting..."
           ruff format --check src/ tests/
-
-      - name: Run type checking
-        run: |
-          echo "🔎 Running type checking..."
-          mypy src/sage/studio --ignore-missing-imports || true

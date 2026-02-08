@@ -84,7 +84,6 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "ruff==0.14.6",
-    "mypy>=1.7.0",
 ]
 
 # Full middleware integration (optional)
@@ -142,12 +141,6 @@ include = '\.pyi?$'
 [tool.isort]
 profile = "black"
 line_length = 100
-
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = [
