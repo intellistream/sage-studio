@@ -299,8 +299,97 @@ def get_stream_handler() -> StreamHandler:
     return _stream_handler
 
 
+async def pipeline_result_to_openai_sse(
+    result: dict[str, Any],
+    *,
+    msg_id: str | None = None,
+    model: str = "sage-rag",
+    chunk_size: int = 4,
+) -> AsyncGenerator[str, None]:
+    """Convert a buffered ``ChatPipelineService`` result into OpenAI-compatible SSE chunks.
+
+    The pipeline returns ``{"text": str, "meta": dict}`` synchronously.
+    This helper splits the text into small word-based pieces and yields
+    them as ``chat.completion.chunk`` SSE frames so that the frontend
+    receives a streaming experience identical to a true token stream.
+
+    Args:
+        result: Pipeline output with at least a ``text`` key.
+        msg_id: Optional override for the ``id`` field of every chunk.
+        model: Model name embedded in each chunk.
+        chunk_size: Number of words per SSE delta.  Lower values give
+                    smoother streaming; higher values reduce HTTP overhead.
+
+    Yields:
+        ``data: {...}\\n\\n`` strings ready for ``StreamingResponse``.
+    """
+    import time
+
+    if msg_id is None:
+        msg_id = f"chatcmpl-{int(time.time())}"
+    created = int(time.time())
+
+    text: str = result.get("text", "")
+    meta: dict[str, Any] = result.get("meta", {})
+
+    # --- Emit optional metadata chunk (intent/route info for the frontend) ---
+    if meta:
+        meta_chunk = {
+            "id": msg_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "delta": {"pipeline_meta": meta},
+                "finish_reason": None,
+            }],
+        }
+        yield f"data: {json.dumps(meta_chunk)}\n\n"
+
+    # --- Stream text content in small word-based pieces ---
+    if text:
+        words = text.split(" ")
+        for i in range(0, len(words), chunk_size):
+            # Re-join the slice and append a trailing space (except for last piece)
+            piece = " ".join(words[i : i + chunk_size])
+            if i + chunk_size < len(words):
+                piece += " "
+            chunk = {
+                "id": msg_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"content": piece},
+                    "finish_reason": None,
+                }],
+            }
+            yield f"data: {json.dumps(chunk)}\n\n"
+            # Tiny sleep to simulate token-by-token streaming for the client
+            import asyncio
+            await asyncio.sleep(0)
+
+    # --- Finish sentinel ---
+    finish_chunk = {
+        "id": msg_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop",
+        }],
+    }
+    yield f"data: {json.dumps(finish_chunk)}\n\n"
+    yield "data: [DONE]\n\n"
+
+
 __all__ = [
     "SSEFormatter",
     "StreamHandler",
     "get_stream_handler",
+    "pipeline_result_to_openai_sse",
 ]

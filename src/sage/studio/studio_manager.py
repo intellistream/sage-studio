@@ -1702,15 +1702,6 @@ if __name__ == "__main__":
             console.print(f"[red]后端API停止失败: {e}[/red]")
             return False
 
-    def _ensure_rag_index(self) -> bool:
-        """(已弃用) 确保 RAG 索引就绪
-
-        注意：索引构建逻辑已移交 AgentPlanner 动态决策，不再硬编码。
-        此方法保留仅作参考，不再自动调用。
-        """
-        console.print("[dim]ℹ️  RAG 索引构建已移交 AgentPlanner，跳过硬编码检查[/dim]")
-        return True
-
     def start(
         self,
         port: int | None = None,
@@ -1724,9 +1715,6 @@ if __name__ == "__main__":
         skip_confirm: bool = False,  # 新增：跳过确认（用于 restart）
     ) -> bool:
         """启动 Studio（前端和后端）"""
-        # 🆕 步骤0: RAG 索引构建已移交 AgentPlanner 动态决策
-        self._ensure_rag_index()
-
         # 检查并启动 Gateway（如果需要 Chat 模式）
         if auto_gateway:
             gateway_pid = self.is_gateway_running()

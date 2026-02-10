@@ -5,43 +5,7 @@
         "is_local": true,
         "description": "CPU-friendly (0.5B, ~2GB RAM)",
         "hardware": "CPU",
-        "default": false,
+        "default": true,
         "api_key": ""
-    },
-    {
-        "name": "Qwen/Qwen2.5-1.5B-Instruct",
-        "base_url": "http://127.0.0.1:8901/v1",
-        "is_local": true,
-        "description": "CPU-friendly (1.5B, ~4GB RAM)",
-        "hardware": "CPU",
-        "api_key": "",
-        "default": true
-    },
-    {
-        "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        "base_url": "http://127.0.0.1:8901/v1",
-        "is_local": true,
-        "description": "Minimal CPU model (1.1B, ~2.5GB RAM)",
-        "hardware": "CPU",
-        "api_key": "",
-        "default": false
-    },
-    {
-        "name": "Qwen/Qwen2.5-3B-Instruct",
-        "base_url": "http://127.0.0.1:8901/v1",
-        "is_local": true,
-        "description": "Balanced model (3B, ~8GB RAM, CPU or GPU)",
-        "hardware": "CPU/GPU",
-        "api_key": "",
-        "default": false
-    },
-    {
-        "name": "Qwen/Qwen2.5-7B-Instruct",
-        "base_url": "http://127.0.0.1:8901/v1",
-        "is_local": true,
-        "description": "Standard model (7B, ~16GB RAM, GPU recommended)",
-        "hardware": "GPU",
-        "api_key": "",
-        "default": false
     }
 ]

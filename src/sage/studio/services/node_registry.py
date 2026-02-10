@@ -59,51 +59,74 @@ class NodeRegistry:
         # Generic map operator
         self._registry["map"] = MapOperator
 
+        # ------------------------------------------------------------------
         # RAG Generators
+        # ------------------------------------------------------------------
         try:
-            from sage.middleware.operators.rag import HFGenerator, OpenAIGenerator
+            from sage.middleware.operators.rag import (
+                HFGenerator,
+                OpenAIGenerator,
+                SageLLMRAGGenerator,
+            )
 
             self._registry["openai_generator"] = OpenAIGenerator
             self._registry["hf_generator"] = HFGenerator
+            self._registry["sagellm_rag_generator"] = SageLLMRAGGenerator
             self._registry["generator"] = OpenAIGenerator  # Default generator
         except ImportError:
             pass
 
+        # ------------------------------------------------------------------
         # RAG Retrievers
+        # ------------------------------------------------------------------
         try:
             from sage.middleware.operators.rag import (
                 ChromaRetriever,
                 MilvusDenseRetriever,
                 MilvusSparseRetriever,
+                Wiki18FAISSRetriever,
             )
 
             self._registry["chroma_retriever"] = ChromaRetriever
             self._registry["milvus_dense_retriever"] = MilvusDenseRetriever
             self._registry["milvus_sparse_retriever"] = MilvusSparseRetriever
+            self._registry["wiki18_faiss_retriever"] = Wiki18FAISSRetriever
             self._registry["retriever"] = ChromaRetriever  # Default retriever
         except ImportError:
             pass
 
+        # ------------------------------------------------------------------
         # RAG Rerankers
+        # ------------------------------------------------------------------
         try:
-            from sage.middleware.operators.rag import BGEReranker
+            from sage.middleware.operators.rag import BGEReranker, LLMbased_Reranker
 
             self._registry["bge_reranker"] = BGEReranker
+            self._registry["llm_reranker"] = LLMbased_Reranker
             self._registry["reranker"] = BGEReranker  # Default reranker
         except ImportError:
             pass
 
+        # ------------------------------------------------------------------
         # RAG Promptors
+        # ------------------------------------------------------------------
         try:
-            from sage.middleware.operators.rag import QAPromptor, SummarizationPromptor
+            from sage.middleware.operators.rag import (
+                QAPromptor,
+                QueryProfilerPromptor,
+                SummarizationPromptor,
+            )
 
             self._registry["qa_promptor"] = QAPromptor
             self._registry["summarization_promptor"] = SummarizationPromptor
+            self._registry["query_profiler_promptor"] = QueryProfilerPromptor
             self._registry["promptor"] = QAPromptor  # Default promptor
         except ImportError:
             pass
 
+        # ------------------------------------------------------------------
         # Document Processing
+        # ------------------------------------------------------------------
         try:
             from sage.middleware.operators.rag import RefinerOperator
             from sage.middleware.operators.rag.chunk import CharacterSplitter
@@ -114,7 +137,30 @@ class NodeRegistry:
         except ImportError:
             pass
 
+        # ------------------------------------------------------------------
+        # Memory Writer
+        # ------------------------------------------------------------------
+        try:
+            from sage.middleware.operators.rag import MemoryWriter
+
+            self._registry["memory_writer"] = MemoryWriter
+        except ImportError:
+            pass
+
+        # ------------------------------------------------------------------
+        # Web Search
+        # ------------------------------------------------------------------
+        try:
+            from sage.middleware.operators.rag import BochaWebSearch
+
+            self._registry["bocha_web_search"] = BochaWebSearch
+            self._registry["web_search"] = BochaWebSearch  # Default web search
+        except ImportError:
+            pass
+
+        # ------------------------------------------------------------------
         # Evaluation Operators
+        # ------------------------------------------------------------------
         try:
             from sage.middleware.operators.rag import (
                 AccuracyEvaluate,
@@ -162,6 +208,48 @@ class NodeRegistry:
             self._registry["mem_write_sink"] = MemWriteSink  # type: ignore
         except ImportError as e:
             print(f"Warning: Could not import Sink operators: {e}")
+
+        # ------------------------------------------------------------------
+        # Context I/O (ContextFileSource / ContextFileSink)
+        # ------------------------------------------------------------------
+        try:
+            from sage.middleware.operators.filters import ContextFileSink, ContextFileSource
+
+            self._registry["context_file_source"] = ContextFileSource  # type: ignore
+            self._registry["context_file_sink"] = ContextFileSink  # type: ignore
+        except ImportError:
+            pass
+
+        # ------------------------------------------------------------------
+        # Pipeline Filters
+        # ------------------------------------------------------------------
+        try:
+            from sage.middleware.operators.filters import EvaluateFilter, ToolFilter
+
+            self._registry["evaluate_filter"] = EvaluateFilter  # type: ignore
+            self._registry["tool_filter"] = ToolFilter  # type: ignore
+        except ImportError:
+            pass
+
+        # ------------------------------------------------------------------
+        # Chat Pipeline Stages (Studio-local operators used by ChatPipelineService)
+        # ------------------------------------------------------------------
+        try:
+            from sage.studio.services.chat_pipeline import (
+                ContextRetrievalStage,
+                GeneratorStage,
+                IntentStage,
+                PackageResultStage,
+                PromptStage,
+            )
+
+            self._registry["intent_stage"] = IntentStage
+            self._registry["context_retrieval_stage"] = ContextRetrievalStage
+            self._registry["prompt_stage"] = PromptStage
+            self._registry["generator_stage"] = GeneratorStage
+            self._registry["package_result_stage"] = PackageResultStage
+        except ImportError:
+            pass
 
     def register(self, node_type: str, operator_class: type[MapOperator]):
         """Register a new node type"""

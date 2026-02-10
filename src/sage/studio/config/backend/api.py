@@ -27,7 +27,6 @@ from pydantic import BaseModel
 
 from sage.studio.config.ports import StudioPorts
 from sage.common.config.user_paths import get_user_data_dir as get_common_user_data_dir
-from sage.studio.services import AgentOrchestrator, get_orchestrator
 from sage.studio.services.auth_service import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     AuthService,
@@ -38,7 +37,7 @@ from sage.studio.services.auth_service import (
 )
 from sage.studio.services.file_upload_service import get_file_upload_service
 from sage.studio.services.memory_integration import get_memory_service
-from sage.studio.services.stream_handler import get_stream_handler
+from sage.studio.services.stream_handler import pipeline_result_to_openai_sse
 
 # Gateway URL for API calls
 # Use 127.0.0.1 instead of localhost to avoid IPv6 issues and ensure consistent behavior
@@ -1585,35 +1584,6 @@ async def get_logs(flow_id: str, last_id: int = 0):
 # ==================== Chat Mode API (新增) ====================
 
 
-class ChatRequest(BaseModel):
-    """Chat 模式请求"""
-
-    message: str
-    session_id: str | None = None
-    model: str = "sage-default"
-    stream: bool = False
-
-
-class AgentChatRequest(BaseModel):
-    """Agent 聊天请求"""
-
-    message: str
-    session_id: str
-    history: list[dict[str, str]] | None = None
-    route: str | None = None
-    should_index: bool | None = None
-    metadata: dict[str, Any] | None = None
-    evidence: list[dict[str, Any]] | None = None
-
-
-class ChatResponse(BaseModel):
-    """Chat 模式响应"""
-
-    content: str
-    session_id: str
-    timestamp: str
-
-
 class ChatSessionSummary(BaseModel):
     """Chat 会话摘要"""
 
@@ -1662,21 +1632,27 @@ def _save_session(user_id: str, session_id: str, data: dict):
 async def proxy_chat_completions(
     request: Request, current_user: Annotated[User, Depends(get_current_user)]
 ):
-    """Chat completions with AgentOrchestrator (RAG-enabled) in OpenAI-compatible format"""
+    """Chat completions via ChatPipelineService in OpenAI-compatible SSE format.
+
+    The SAGE DataStream pipeline (Intent → ContextRetrieval → Prompt →
+    Generate → Package) runs synchronously through ``ChatPipelineService``.
+    The buffered result is then streamed back to the client in
+    OpenAI-compatible ``chat.completion.chunk`` SSE frames.
+
+    No direct gateway calls are made from this endpoint — all LLM
+    interaction is encapsulated inside the pipeline's ``GeneratorStage``.
+    """
     from datetime import datetime
 
     try:
-        # Get the raw body
         body = await request.json()
         session_id = body.get("session_id")
         user_id = str(current_user.id)
-        is_stream = body.get("stream", True)
 
         # Extract user message from request
         messages = body.get("messages", [])
         user_message_content = None
         if messages:
-            # Get the last user message
             for msg in reversed(messages):
                 if msg.get("role") == "user":
                     user_message_content = msg.get("content")
@@ -1691,7 +1667,6 @@ async def proxy_chat_completions(
             session_data = _load_session(user_id, session_id)
 
         if not session_data and session_id:
-            # Create new session
             now = datetime.now().isoformat()
             session_data = {
                 "id": session_id,
@@ -1702,7 +1677,7 @@ async def proxy_chat_completions(
                 "metadata": {},
             }
 
-        # Save user message to session
+        # Persist user message
         if session_data:
             user_msg = {
                 "role": "user",
@@ -1713,275 +1688,78 @@ async def proxy_chat_completions(
             session_data["last_active"] = datetime.now().isoformat()
             _save_session(user_id, session_id, session_data)
 
-        # Use AgentOrchestrator for RAG-powered responses
-        orchestrator = get_orchestrator()
-        history = [{"role": msg["role"], "content": msg["content"]} for msg in session_data["messages"][-5:]] if session_data else []
+        # Build conversation history from last N turns
+        history = (
+            [{"role": m["role"], "content": m["content"]}
+             for m in session_data["messages"][-5:]]
+            if session_data
+            else []
+        )
 
-        collected_content = []
+        model = body.get("model", "sage-rag")
 
-        # Stream with OpenAI-compatible format
-        async def event_generator():
-            import time
-            from sage.studio.models.agent_step import AgentStep
+        # --- Run through SAGE DataStream pipeline ---
+        from sage.studio.services.chat_pipeline import get_chat_pipeline_service
 
-            msg_id = f"chatcmpl-{int(time.time())}"
-            created = int(time.time())
-            model = body.get("model", "sage-rag")
+        pipeline_svc = get_chat_pipeline_service(
+            generator_config={
+                "model_name": model,
+                "max_tokens": body.get("max_tokens", 2048),
+                "temperature": body.get("temperature", 0.7),
+            },
+        )
 
-            try:
-                async for item in orchestrator.process_message(
-                    message=user_message_content,
-                    session_id=session_id,
-                    history=history,
-                    should_index=False,
-                ):
-                    if isinstance(item, str):
-                        # Text content - send as delta
-                        collected_content.append(item)
-                        chunk = {
-                            "id": msg_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": model,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {"content": item},
-                                "finish_reason": None,
-                            }],
-                        }
-                        yield f"data: {json.dumps(chunk)}\n\n"
-                    elif isinstance(item, AgentStep):
-                        # Send AgentStep as special chunk (for frontend to display RAG process)
-                        step_chunk = {
-                            "id": msg_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": model,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {
-                                    "agent_step": {
-                                        "step_id": item.step_id,
-                                        "type": item.type.value if hasattr(item.type, "value") else str(item.type),
-                                        "content": item.content,
-                                        "status": item.status.value if hasattr(item.status, "value") else str(item.status),
-                                        "metadata": item.metadata,
-                                    }
-                                },
-                                "finish_reason": None,
-                            }],
-                        }
-                        yield f"data: {json.dumps(step_chunk)}\n\n"
-
-                # Send finish chunk
-                finish_chunk = {
-                    "id": msg_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {},
-                        "finish_reason": "stop",
-                    }],
-                }
-                yield f"data: {json.dumps(finish_chunk)}\n\n"
-                yield "data: [DONE]\n\n"
-
-                # Save assistant message after streaming completes
-                if session_data and collected_content:
-                    assistant_msg = {
-                        "role": "assistant",
-                        "content": "".join(collected_content),
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    session_data["messages"].append(assistant_msg)
-                    session_data["last_active"] = datetime.now().isoformat()
-                    _save_session(user_id, session_id, session_data)
-
-            except Exception as e:
-                error_msg = f"AgentOrchestrator error: {str(e)}"
-                print(f"[chat] Error: {e}")
-                yield f"data: {json.dumps({'error': error_msg})}\n\n"
-                yield "data: [DONE]\n\n"
-
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/chat/message", response_model=ChatResponse)
-async def send_chat_message(
-    request: ChatRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    """
-    发送聊天消息（调用 sage-gateway）
-
-    注意：需要 sage-gateway 服务运行在 GATEWAY_BASE_URL
-    """
-    import uuid
-    from datetime import datetime
-
-    import httpx
-
-    # 1. Handle Session
-    session_id = request.session_id
-    session_data = None
-    user_id = str(current_user.id)
-
-    if session_id:
-        session_data = _load_session(user_id, session_id)
-
-    if not session_data:
-        # Create new session if not found or not provided
-        session_id = session_id or str(uuid.uuid4())
-        now = datetime.now().isoformat()
-        session_data = {
-            "id": session_id,
-            "title": "New Chat",
-            "created_at": now,
-            "last_active": now,
-            "messages": [],
-            "metadata": {},
+        # Pipeline expects {query, session_id, history, ...}
+        pipeline_request: dict = {
+            "query": user_message_content,
+            "session_id": session_id or "",
+            "history": history,
+            "model": model,
         }
 
-    # 2. Append User Message
-    user_msg = {"role": "user", "content": request.message, "timestamp": datetime.now().isoformat()}
-    session_data["messages"].append(user_msg)
-    session_data["last_active"] = datetime.now().isoformat()
-    _save_session(user_id, session_id, session_data)
+        # run() is synchronous — offload to a thread so we don't block the event loop
+        import asyncio
+        import logging as _logging
 
-    # Resolve model if "sage-default"
-    model_to_use = request.model
-    if model_to_use == "sage-default":
-        # 1. Try environment variable (set by select_llm_model)
-        model_to_use = os.getenv("SAGE_CHAT_MODEL")
+        _chat_logger = _logging.getLogger("sage.studio.chat")
 
-        # 2. If not set, try to detect from Gateway
-        if not model_to_use:
-            try:
-                from sage.studio.config.ports import StudioPorts
+        _chat_logger.info("[chat] Pipeline request: %s", pipeline_request)
 
-                resp = requests.get(
-                    f"http://localhost:{StudioPorts.GATEWAY}/v1/models", timeout=2
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("data"):
-                        detected = data["data"][0].get("id")
-                        if detected and detected != "default":
-                            model_to_use = detected
-            except Exception:
-                pass
-
-        # 3. Fallback to original if still failed
-        if not model_to_use:
-            model_to_use = request.model
-
-    try:
-        # 调用 sage-gateway 的 OpenAI 兼容接口
-        # We pass the session_id to gateway as well, so it can maintain its own state if needed,
-        # or we can pass full history if gateway is stateless.
-        # For now, let's pass session_id.
-        async with httpx.AsyncClient(timeout=30.0, trust_env=False) as client:
-            gateway_response = await client.post(
-                f"{GATEWAY_BASE_URL}/v1/chat/completions",
-                json={
-                    "model": model_to_use,
-                    "messages": [{"role": "user", "content": request.message}],
-                    "stream": False,
-                    "session_id": session_id,  # Pass session_id to gateway
-                },
-            )
-
-            if gateway_response.status_code != 200:
-                raise HTTPException(
-                    status_code=gateway_response.status_code,
-                    detail=f"Gateway error: {gateway_response.text}",
-                )
-
-            data = gateway_response.json()
-
-            # 提取响应内容
-            assistant_content = data["choices"][0]["message"]["content"]
-
-            # 3. Append Assistant Message
-            assistant_msg = {
-                "role": "assistant",
-                "content": assistant_content,
-                "timestamp": datetime.now().isoformat(),
-            }
-            session_data["messages"].append(assistant_msg)
-            session_data["last_active"] = datetime.now().isoformat()
-            _save_session(user_id, session_id, session_data)
-
-            return ChatResponse(
-                content=assistant_content,
-                session_id=session_id,
-                timestamp=datetime.now().isoformat(),
-            )
-
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=503,
-            detail=f"无法连接到 SAGE Gateway ({GATEWAY_BASE_URL})。请确保 gateway 服务已启动。",
+        loop = asyncio.get_running_loop()
+        pipeline_result: dict = await loop.run_in_executor(
+            None, pipeline_svc.run, pipeline_request
         )
+
+        _chat_logger.info("[chat] Pipeline result keys: %s", list(pipeline_result.keys()))
+        _chat_logger.info("[chat] Pipeline result text (first 200): %s", str(pipeline_result.get("text", ""))[:200])
+        _chat_logger.info("[chat] Pipeline result meta: %s", pipeline_result.get("meta", {}))
+
+        # --- Stream the buffered result as OpenAI-compatible SSE ---
+        assistant_text = pipeline_result.get("text", "")
+
+        async def event_generator():
+            async for chunk in pipeline_result_to_openai_sse(
+                pipeline_result, model=model
+            ):
+                yield chunk
+
+            # Persist assistant reply after streaming completes
+            if session_data and assistant_text:
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": assistant_text,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                session_data["messages"].append(assistant_msg)
+                session_data["last_active"] = datetime.now().isoformat()
+                _save_session(user_id, session_id, session_data)
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chat 请求失败: {str(e)}")
-
-
-@app.post("/api/chat/agent")
-async def agent_chat(request: AgentChatRequest):
-    """Multi-Agent 聊天接口"""
-    orchestrator = get_orchestrator()
-    stream_handler = get_stream_handler()
-
-    source = orchestrator.process_message(
-        message=request.message,
-        session_id=request.session_id,
-        history=request.history,
-        should_index=request.should_index or False,
-        metadata=request.metadata or {},
-        evidence=request.evidence or [],
-    )
-
-    return stream_handler.create_response(source)
-
-
-@app.post("/api/chat/agent/sync")
-async def agent_chat_sync(request: AgentChatRequest):
-    """非流式 Agent 聊天接口（调试用）"""
-    orchestrator = get_orchestrator()
-
-    steps = []
-    text_parts = []
-
-    async for item in orchestrator.process_message(
-        message=request.message,
-        session_id=request.session_id,
-        history=request.history,
-        should_index=request.should_index or False,
-        metadata=request.metadata or {},
-        evidence=request.evidence or [],
-    ):
-        if hasattr(item, "step_id"):  # AgentStep
-            # Handle both dataclass and Pydantic models
-            if hasattr(item, "to_dict"):
-                steps.append(item.to_dict())
-            elif hasattr(item, "dict"):
-                steps.append(item.dict())
-            else:
-                from dataclasses import asdict
-
-                steps.append(asdict(item))
-        else:  # str
-            text_parts.append(item)
-
-    return {
-        "steps": steps,
-        "response": "".join(text_parts),
-    }
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/chat/sessions", response_model=list[ChatSessionSummary])

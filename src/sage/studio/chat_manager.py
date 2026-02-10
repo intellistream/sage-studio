@@ -947,12 +947,13 @@ class ChatModeManager(StudioManager):
             8899,  # Edge port
         }
 
-        env_port = os.environ.get("SAGE_GATEWAY_PORT")
-        if env_port:
-            try:
-                candidate_ports.add(int(env_port))
-            except ValueError:
-                pass
+        for env_name in ("SAGE_GATEWAY_PORT", "SAGELLM_GATEWAY_PORT"):
+            env_port = os.environ.get(env_name)
+            if env_port:
+                try:
+                    candidate_ports.add(int(env_port))
+                except ValueError:
+                    pass
 
         # 1) PID file check
         if self.gateway_pid_file.exists():
@@ -1011,6 +1012,8 @@ class ChatModeManager(StudioManager):
     def _start_gateway(self, port: int | None = None) -> bool:
         if self._is_gateway_running():
             console.print("[green]✅ sage-gateway 已运行[/green]")
+            if self.gateway_log_file.exists():
+                console.print(f"   日志: {self.gateway_log_file}")
             return True
 
         # Skip slow import check - just try to start directly
@@ -1050,6 +1053,8 @@ class ChatModeManager(StudioManager):
 
         env = os.environ.copy()
         env.setdefault("SAGE_GATEWAY_PORT", str(gateway_port))
+        # sagellm-gateway reads SAGELLM_GATEWAY_PORT (not SAGE_GATEWAY_PORT)
+        env["SAGELLM_GATEWAY_PORT"] = str(gateway_port)
 
         console.print(f"[blue]🚀 启动 sagellm-gateway (端口: {gateway_port})...[/blue]")
         try:
@@ -1080,6 +1085,7 @@ class ChatModeManager(StudioManager):
                 response = requests.get(url, timeout=2)
                 if response.status_code == 200:
                     console.print(f"[green]✅ Gateway 已就绪 (耗时 {(i + 1) * 0.5:.1f}秒)[/green]")
+                    console.print(f"   日志: {self.gateway_log_file}")
                     return True
             except requests.RequestException:
                 pass
@@ -1207,6 +1213,120 @@ class ChatModeManager(StudioManager):
         except Exception as exc:
             console.print(f"[red]❌ 停止 gateway 失败: {exc}")
             return False
+
+    # ------------------------------------------------------------------
+    # Engine Registration with Gateway Control Plane
+    # ------------------------------------------------------------------
+    def _register_engines_with_gateway(self) -> None:
+        """Register running LLM and Embedding engines with Gateway's Control Plane.
+
+        After the gateway starts, the Control Plane has no knowledge of running
+        engines. This method discovers running LLM/Embedding services and
+        registers them via the management API.
+        """
+        gw_base = f"http://127.0.0.1:{self.gateway_port}"
+        register_url = f"{gw_base}/v1/management/engines/register"
+        unregister_base = f"{gw_base}/v1/management/engines"
+
+        # --- Register LLM engine(s) ---
+        # Scan the LLM port range for running engines
+        llm_ports_to_check = list(range(StudioPorts.BENCHMARK_LLM, StudioPorts.BENCHMARK_LLM + 10))
+        llm_ports_to_check.append(StudioPorts.LLM_DEFAULT)  # 8001
+        for port in llm_ports_to_check:
+            health_url = f"http://127.0.0.1:{port}/health"
+            try:
+                resp = requests.get(health_url, timeout=2)
+                if resp.status_code == 200:
+                    # Determine model name from health or info endpoint
+                    model_name = self._last_model_name or self.llm_model
+                    try:
+                        info_resp = requests.get(f"http://127.0.0.1:{port}/info", timeout=2)
+                        if info_resp.status_code == 200:
+                            info = info_resp.json()
+                            model_name = info.get("model", model_name)
+                    except Exception:
+                        pass
+
+                    engine_id = f"engine-llm-{port}"
+                    # Unregister first to handle restart (ignore 404)
+                    try:
+                        requests.delete(f"{unregister_base}/{engine_id}", timeout=3)
+                    except Exception:
+                        pass
+
+                    payload = {
+                        "engine_id": engine_id,
+                        "model_id": model_name,
+                        "host": "127.0.0.1",
+                        "port": port,
+                        "engine_kind": "llm",
+                    }
+                    try:
+                        r = requests.post(register_url, json=payload, timeout=5)
+                        if r.status_code == 200:
+                            console.print(
+                                f"[green]✅ 已注册 LLM 引擎到 Gateway: {model_name} @ :{port}[/green]"
+                            )
+                        else:
+                            console.print(
+                                f"[yellow]⚠️  注册 LLM 引擎失败 (:{port}): {r.text}[/yellow]"
+                            )
+                    except Exception as e:
+                        console.print(f"[yellow]⚠️  注册 LLM 引擎异常 (:{port}): {e}[/yellow]")
+            except requests.RequestException:
+                pass
+
+        # --- Register Embedding engine ---
+        embed_port = StudioPorts.EMBEDDING_DEFAULT
+        try:
+            resp = requests.get(f"http://127.0.0.1:{embed_port}/health", timeout=2)
+            if resp.status_code != 200:
+                raise requests.RequestException("not healthy")
+        except requests.RequestException:
+            # Try /v1/models as fallback health check
+            try:
+                resp = requests.get(f"http://127.0.0.1:{embed_port}/v1/models", timeout=2)
+                if resp.status_code != 200:
+                    return
+            except requests.RequestException:
+                return
+
+        # Determine embedding model name
+        embed_model = "unknown"
+        try:
+            model_resp = requests.get(f"http://127.0.0.1:{embed_port}/v1/models", timeout=2)
+            if model_resp.status_code == 200:
+                data = model_resp.json()
+                models = data.get("data", [])
+                if models:
+                    embed_model = models[0].get("id", embed_model)
+        except Exception:
+            pass
+
+        embed_engine_id = f"engine-embedding-{embed_port}"
+        # Unregister first to handle restart (ignore 404)
+        try:
+            requests.delete(f"{unregister_base}/{embed_engine_id}", timeout=3)
+        except Exception:
+            pass
+
+        payload = {
+            "engine_id": embed_engine_id,
+            "model_id": embed_model,
+            "host": "127.0.0.1",
+            "port": embed_port,
+            "engine_kind": "embedding",
+        }
+        try:
+            r = requests.post(register_url, json=payload, timeout=5)
+            if r.status_code == 200:
+                console.print(
+                    f"[green]✅ 已注册 Embedding 引擎到 Gateway: {embed_model} @ :{embed_port}[/green]"
+                )
+            else:
+                console.print(f"[yellow]⚠️  注册 Embedding 引擎失败: {r.text}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]⚠️  注册 Embedding 引擎异常: {e}[/yellow]")
 
     # ------------------------------------------------------------------
     # Auto-Scaling Logic
@@ -1496,6 +1616,9 @@ class ChatModeManager(StudioManager):
         # Start Gateway
         if not self._start_gateway(port=self.gateway_port):
             return False
+
+        # Register engines with Gateway's Control Plane
+        self._register_engines_with_gateway()
 
         # Start Studio UI (use parent class method)
         console.print("[blue]⚙️ 启动 Studio 服务...[/blue]")
