@@ -125,11 +125,15 @@ where = ["src"]
     "py.typed",
     "*.pyi",
     "templates/*.html",
+    "templates/**/*.html",
     "static/*",
-    "config/**/*",
+    "static/**/*",
+    "config/**/*.yaml",
+    "config/**/*.json",
+    "config/**/*.toml",
     "data/**/*",
-    "docs/**/*",
-    "frontend/**/*",
+    "docs/**/*.md",
+    "frontend/dist/**/*",
 ]
 
 [tool.setuptools.dynamic]
