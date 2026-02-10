@@ -60,6 +60,68 @@ class DocumentLoader:
             chunk_size=chunk_size,
             overlap=chunk_overlap,
         )
+        self._ignore_patterns = []
+
+    def _load_ignore_patterns(self, root_path: Path) -> list[str]:
+        """Load ignore patterns from .studioignore file.
+
+        Args:
+            root_path: Root directory to search for .studioignore
+
+        Returns:
+            List of patterns to ignore
+        """
+        ignore_file = root_path / ".studioignore"
+        patterns = []
+
+        if ignore_file.exists():
+            try:
+                with open(ignore_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        # Skip empty lines and comments
+                        if line and not line.startswith('#'):
+                            patterns.append(line)
+                logger.info(f"Loaded {len(patterns)} ignore patterns from {ignore_file}")
+            except Exception as e:
+                logger.warning(f"Failed to load .studioignore: {e}")
+
+        return patterns
+
+    def _should_ignore(self, file_path: Path, root_path: Path, ignore_patterns: list[str]) -> bool:
+        """Check if a file should be ignored based on patterns.
+
+        Args:
+            file_path: Path to check
+            root_path: Root directory
+            ignore_patterns: List of patterns to match
+
+        Returns:
+            True if file should be ignored
+        """
+        if not ignore_patterns:
+            return False
+
+        # Get relative path from root
+        try:
+            rel_path = file_path.relative_to(root_path)
+            rel_path_str = str(rel_path)
+
+            for pattern in ignore_patterns:
+                # Simple pattern matching: if pattern ends with /, it's a directory
+                if pattern.endswith('/'):
+                    dir_pattern = pattern.rstrip('/')
+                    if rel_path_str.startswith(dir_pattern + '/') or str(file_path.parent).endswith(dir_pattern):
+                        return True
+                else:
+                    # Exact match or wildcard match
+                    if rel_path_str == pattern or rel_path_str.startswith(pattern + '/'):
+                        return True
+        except ValueError:
+            # file_path is not relative to root_path
+            pass
+
+        return False
 
     def load_directory(
         self,
@@ -83,14 +145,31 @@ class DocumentLoader:
             logger.warning(f"Directory does not exist: {path}")
             return
 
+        # Load ignore patterns from .studioignore
+        ignore_patterns = self._load_ignore_patterns(path)
+
+        total_files = 0
+        ignored_files = 0
+
         for pattern in patterns:
             for file_path in path.glob(pattern):
                 if file_path.is_file():
+                    total_files += 1
+
+                    # Check if file should be ignored
+                    if self._should_ignore(file_path, path, ignore_patterns):
+                        ignored_files += 1
+                        logger.debug(f"Ignoring file (matched ignore pattern): {file_path.relative_to(path)}")
+                        continue
+
                     try:
                         yield from self.load_file(file_path, source_type)
                     except Exception as e:
                         logger.warning(f"Failed to load {file_path}: {e}")
                         continue
+
+        if ignored_files > 0:
+            logger.info(f"Loaded {total_files - ignored_files} files, ignored {ignored_files} files based on .studioignore")
 
     def load_file(self, path: Path, source_type: SourceType) -> list[DocumentChunk]:
         """Load and chunk a single file.
