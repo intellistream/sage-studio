@@ -115,6 +115,34 @@ sage studio logs --follow       # View logs
 
 **Note**: The `sage studio` CLI command is implemented via a plugin system. Studio registers itself to SAGE CLI through entry points when installed. See [src/sage/studio/cli.py](src/sage/studio/cli.py) for implementation.
 
+### Startup Output Format
+
+When `sage studio start` completes successfully, it displays a unified status summary:
+
+```
+======================================================================
+🎉 Chat 模式就绪！
+======================================================================
+🎨 Studio 前端: http://0.0.0.0:5173
+💬 打开顶部 Chat 标签即可体验
+
+📡 运行中的服务：
+   LLM 引擎       | 端口: 8901  | 日志: /home/user/.local/state/sage/logs/llm_engine.log
+   Embedding 服务 | 端口: 8090  | 日志: /home/user/.local/state/sage/logs/embedding.log
+   Gateway        | 端口: 8889  | 日志: /home/user/.local/state/sage/logs/gateway.log
+   Studio 后端    | 端口: 8080  | 日志: /home/user/.local/state/sage/logs/studio_backend.log
+   Studio 前端    | 端口: 5173  | 日志: /home/user/.local/state/sage/logs/studio.log
+======================================================================
+```
+
+**Key Points**:
+- Services are listed in **workflow order** (LLM → Embedding → Gateway → Backend → Frontend)
+- Each service shows: **name**, **port**, **log file path**
+- All log paths are unified at the end (not scattered during startup)
+- Format is table-like with aligned columns for readability
+
+**Implementation**: See `ChatModeManager.start()` in [src/sage/studio/chat_manager.py](src/sage/studio/chat_manager.py)
+
 ## 📦 PyPI Publishing
 
 **All packages MUST be published via `sage-pypi-publisher`:**

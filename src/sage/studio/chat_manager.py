@@ -830,7 +830,6 @@ class ChatModeManager(StudioManager):
             embedding_pid_file.write_text(str(proc.pid))
 
             console.print(f"   [green]✓[/green] Embedding 服务已启动 (PID: {proc.pid})")
-            console.print(f"   日志: {embedding_log}")
 
             # Wait for service to be ready (up to 180 seconds for model download)
             console.print("   [dim]等待服务就绪 (首次可能需要下载模型)...[/dim]")
@@ -1012,8 +1011,6 @@ class ChatModeManager(StudioManager):
     def _start_gateway(self, port: int | None = None) -> bool:
         if self._is_gateway_running():
             console.print("[green]✅ sage-gateway 已运行[/green]")
-            if self.gateway_log_file.exists():
-                console.print(f"   日志: {self.gateway_log_file}")
             return True
 
         # Skip slow import check - just try to start directly
@@ -1085,7 +1082,6 @@ class ChatModeManager(StudioManager):
                 response = requests.get(url, timeout=2)
                 if response.status_code == 200:
                     console.print(f"[green]✅ Gateway 已就绪 (耗时 {(i + 1) * 0.5:.1f}秒)[/green]")
-                    console.print(f"   日志: {self.gateway_log_file}")
                     return True
             except requests.RequestException:
                 pass
@@ -1633,13 +1629,55 @@ class ChatModeManager(StudioManager):
         )
 
         if success:
+            # 获取实际端口（从配置文件读取）
+            config = self.load_config()
+            actual_port = config.get("port", frontend_port or 5173)
+            actual_host = config.get("host", host or "0.0.0.0")
+            backend_port = config.get("backend_port", self.backend_port)
+
+            # 收集所有服务信息（按工作流程顺序）
+            log_dir = get_user_paths().logs_dir
+            service_info = []  # (服务名, 端口, 日志路径)
+
+            # 1. LLM 引擎
+            if start_llm and self.llm_service:
+                llm_log = log_dir / "llm_engine.log"
+                service_info.append(("LLM 引擎", self.llm_port, llm_log))
+
+            # 2. Embedding 服务
+            if not no_embedding:
+                embedding_log = log_dir / "embedding.log"
+                service_info.append(("Embedding 服务", StudioPorts.EMBEDDING_DEFAULT, embedding_log))
+
+            # 3. Gateway
+            if self.gateway_log_file.exists():
+                service_info.append(("Gateway", self.gateway_port, self.gateway_log_file))
+
+            # 4. Studio 后端
+            if self.backend_log_file.exists():
+                service_info.append(("Studio 后端", backend_port, self.backend_log_file))
+
+            # 5. Studio 前端
+            if self.log_file.exists():
+                service_info.append(("Studio 前端", actual_port, self.log_file))
+
+            # 统一显示服务信息和日志链接
             console.print("\n" + "=" * 70)
             console.print("[green]🎉 Chat 模式就绪！[/green]")
-            if start_llm and self.llm_service:
-                console.print("[green]🤖 本地 LLM: 由 sageLLM 管理[/green]")
-            console.print(f"[green]🌐 Gateway API: http://localhost:{self.gateway_port}[/green]")
-            console.print("[green]💬 打开顶部 Chat 标签即可体验[/green]")
             console.print("=" * 70)
+
+            # 显示访问地址
+            console.print(f"[blue]🎨 Studio 前端: http://{actual_host}:{actual_port}[/blue]")
+            console.print("[green]💬 打开顶部 Chat 标签即可体验[/green]")
+
+            # 显示所有服务状态（按工作流程顺序）
+            if service_info:
+                console.print("\n[cyan]📡 运行中的服务：[/cyan]")
+                max_name_len = max(len(name) for name, _, _ in service_info)
+                for name, port, log_path in service_info:
+                    console.print(f"   {name:<{max_name_len}} | 端口: [yellow]{port:<5}[/yellow] | 日志: [dim]{log_path}[/dim]")
+
+            console.print("=" * 70 + "\n")
 
         return success
 

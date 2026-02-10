@@ -1946,8 +1946,6 @@ if __name__ == "__main__":
                 f.write(str(process.pid))
 
             console.print(f"[green]Studio 启动成功 (PID: {process.pid})[/green]")
-            console.print(f"[blue]访问地址: http://{host}:{port}[/blue]")
-            console.print(f"[dim]日志文件: {self.log_file}[/dim]")
 
             return True
 
