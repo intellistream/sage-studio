@@ -52,7 +52,7 @@ from sage.middleware.operators.rag.generator import OpenAIGenerator
 from sage.middleware.operators.rag.promptor import QAPromptor
 
 from sage.studio.config.ports import StudioPorts
-from sage_libs.sage_agentic.intent import IntentClassifier
+from sage_libs.sage_agentic.intent import IntentClassifier, UserIntent
 from sage_libs.sage_agentic.workflows.router import (
     WorkflowDecision,
     WorkflowRequest,
@@ -81,42 +81,55 @@ class IntentStage(MapFunction):
         self._classifier = IntentClassifier(mode="llm")
         self._router = WorkflowRouter(self._classifier)
 
+        # Log IntentClassifier initialization details
+        self.logger.info(f"IntentStage initialized with mode='llm', classifier={self._classifier}")
+
     def execute(self, payload: dict[str, Any] | StopSignal | None) -> dict[str, Any] | StopSignal | None:
         if payload is None or isinstance(payload, StopSignal):
             return payload
 
         self.logger.info("IntentStage: Received payload")
 
-        query: str = payload.get("query", payload.get("prompt", ""))
-        history: list[dict[str, str]] = payload.get("history", [])
-        session_id: str = payload.get("session_id", "")
+        try:
+            query: str = payload.get("query", payload.get("prompt", ""))
+            history: list[dict[str, str]] = payload.get("history", [])
+            session_id: str = payload.get("session_id", "")
 
-        import asyncio
+            import asyncio
 
-        loop = asyncio.new_event_loop()
-        decision: WorkflowDecision = loop.run_until_complete(
-            self._router.decide(
-                WorkflowRequest(
-                    query=query,
-                    session_id=session_id,
-                    history=history,
+            loop = asyncio.new_event_loop()
+            decision: WorkflowDecision = loop.run_until_complete(
+                self._router.decide(
+                    WorkflowRequest(
+                        query=query,
+                        session_id=session_id,
+                        history=history,
+                    )
                 )
             )
-        )
-        loop.close()
+            loop.close()
 
-        payload["intent"] = decision.intent.value
-        payload["route"] = decision.route.value
-        payload["confidence"] = decision.confidence
-        payload["matched_keywords"] = decision.matched_keywords
+            payload["intent"] = decision.intent.value
+            payload["route"] = decision.route.value
+            payload["confidence"] = decision.confidence
+            payload["matched_keywords"] = decision.matched_keywords
 
-        self.logger.info(
-            "Intent: %s  Route: %s  Confidence: %.2f",
-            decision.intent.value,
-            decision.route.value,
-            decision.confidence,
-        )
-        return payload
+            self.logger.info(
+                "Intent: %s  Route: %s  Confidence: %.2f  Keywords: %s",
+                decision.intent.value,
+                decision.route.value,
+                decision.confidence,
+                decision.matched_keywords,
+            )
+            return payload
+        except Exception as e:
+            self.logger.error(f"IntentStage failed: {e}", exc_info=True)
+            # Return payload with default values on error
+            payload.setdefault("intent", "question")
+            payload.setdefault("route", "general")
+            payload.setdefault("confidence", 0.0)
+            payload.setdefault("matched_keywords", [])
+            return payload
 
 
 class ContextRetrievalStage(MapFunction):
@@ -145,6 +158,8 @@ class ContextRetrievalStage(MapFunction):
         query: str = payload.get("query", payload.get("prompt", ""))
         session_id: str = payload.get("session_id", "")
 
+        self.logger.info(f"ContextRetrievalStage: route={route}, query='{query[:50]}...'")
+
         retrieval_results: list[str] = []
 
         # --- 1. NeuroMem memory retrieval (always, if session exists) ---
@@ -164,6 +179,8 @@ class ContextRetrievalStage(MapFunction):
                 for item in context_items:
                     snippet = item.content if len(item.content) <= 400 else f"{item.content[:400]}..."
                     retrieval_results.append(snippet)
+
+                self.logger.info(f"ContextRetrievalStage: Retrieved {len(context_items)} items from memory")
             except Exception as e:
                 self.logger.warning(f"ContextRetrievalStage: Memory retrieval failed: {e}")
                 # Continue without memory context
@@ -171,6 +188,7 @@ class ContextRetrievalStage(MapFunction):
         # --- 2. SageVDB-backed knowledge base retrieval ---
         # Only perform KB search for routes that need evidence
         if route in (WorkflowRoute.SIMPLE_RAG.value, WorkflowRoute.CODE.value, WorkflowRoute.AGENTIC.value):
+            self.logger.info(f"ContextRetrievalStage: Performing KB search (route={route})")
             try:
                 from sage.studio.services.knowledge_manager import KnowledgeManager
 
@@ -183,12 +201,17 @@ class ContextRetrievalStage(MapFunction):
                 )
                 loop.close()
 
-                for res in km_results:
+                self.logger.info(f"ContextRetrievalStage: KB search returned {len(km_results)} results")
+                for i, res in enumerate(km_results):
+                    self.logger.info(f"  [{i}] score={res.score:.3f}, source={res.source}, content={res.content[:80]}...")
                     retrieval_results.append(res.content)
             except Exception as e:
-                self.logger.warning(f"ContextRetrievalStage: Knowledge base retrieval failed: {e}")
+                self.logger.error(f"ContextRetrievalStage: Knowledge base retrieval failed: {e}", exc_info=True)
                 # Continue without KB context
+        else:
+            self.logger.info(f"ContextRetrievalStage: Skipping KB search (route={route}, not RAG/CODE/AGENTIC)")
 
+        self.logger.info(f"ContextRetrievalStage: Total {len(retrieval_results)} retrieval results")
         payload["retrieval_results"] = retrieval_results
         return payload
 
@@ -267,23 +290,34 @@ class GeneratorStage(MapFunction):
 
         self.logger.info(f"GeneratorStage: About to call LLM with prompt type={type(prompt)}")
 
-        # OpenAIGenerator expects [original_data, prompt]
-        result = self._generator.execute([payload, prompt])
+        try:
+            # OpenAIGenerator expects [original_data, prompt]
+            result = self._generator.execute([payload, prompt])
 
-        self.logger.info(f"GeneratorStage: Got result from LLM, type={type(result)}")
+            self.logger.info(f"GeneratorStage: Got result from LLM, type={type(result)}")
 
-        if isinstance(result, dict):
-            result.setdefault("query", payload.get("query", ""))
-            if response_queue is not None:
-                result["_response_queue"] = response_queue
-            return result
+            if isinstance(result, dict):
+                result.setdefault("query", payload.get("query", ""))
+                result.setdefault("generated", "")
+                if response_queue is not None:
+                    result["_response_queue"] = response_queue
+                return result
 
-        # Fallback: wrap scalar result
-        return {
-            "query": payload.get("query", ""),
-            "generated": str(result),
-            "_response_queue": response_queue,
-        }
+            # Fallback: wrap scalar result
+            return {
+                "query": payload.get("query", ""),
+                "generated": str(result),
+                "_response_queue": response_queue,
+            }
+        except Exception as e:
+            self.logger.error(f"GeneratorStage failed: {e}", exc_info=True)
+            # Return error message as generated text
+            return {
+                "query": payload.get("query", ""),
+                "generated": f"[Error] Failed to generate response: {str(e)}",
+                "_response_queue": response_queue,
+                "error": str(e),
+            }
 
 
 class PackageResultStage(MapFunction):
@@ -338,7 +372,7 @@ class ChatPipelineService:
         self,
         generator_config: dict[str, Any] | None = None,
         promptor_config: dict[str, Any] | None = None,
-        request_timeout: float = 120.0,
+        request_timeout: float = 600.0,  # Increased to 10min to allow KB loading on first request
     ):
         self._generator_config = generator_config or {}
         self._promptor_config = promptor_config or {}
@@ -440,9 +474,22 @@ class ChatPipelineService:
         try:
             result = response_q.get(timeout=self._request_timeout)
             logger.info(f"ChatPipelineService.run: Got result with keys: {list(result.keys()) if isinstance(result, dict) else type(result)}")
+
+            # Validate result structure
+            if not isinstance(result, dict):
+                logger.warning(f"Pipeline returned non-dict result: {type(result)}")
+                result = {"text": str(result), "meta": {}}
+            elif "text" not in result:
+                logger.warning(f"Pipeline result missing 'text' key, keys: {result.keys()}")
+                result.setdefault("text", "")
+                result.setdefault("meta", {})
+
             return result
+        except queue.Empty:
+            logger.error(f"ChatPipelineService.run: Timeout after {self._request_timeout}s")
+            raise TimeoutError(f"Pipeline did not respond within {self._request_timeout}s")
         except Exception as e:
-            logger.error(f"ChatPipelineService.run: Error getting result - {e}")
+            logger.error(f"ChatPipelineService.run: Error getting result - {e}", exc_info=True)
             raise
 
 

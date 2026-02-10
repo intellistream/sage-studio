@@ -30,6 +30,8 @@ import {
  */
 export type ReasoningStepType =
     | 'thinking'
+    | 'reasoning'
+    | 'routing'
     | 'retrieval'
     | 'workflow'
     | 'analysis'
@@ -91,6 +93,8 @@ function getStepIcon(type: ReasoningStepType, status: ReasoningStepStatus) {
 
     const iconMap: Record<ReasoningStepType, JSX.Element> = {
         thinking: <Brain size={14} className={`${baseClass} text-purple-500`} />,
+        reasoning: <Brain size={14} className={`${baseClass} text-purple-500`} />,
+        routing: <Sparkles size={14} className={`${baseClass} text-blue-500`} />,
         retrieval: <Search size={14} className={`${baseClass} text-green-600`} />,
         workflow: <Workflow size={14} className={`${baseClass} text-orange-500`} />,
         analysis: <Lightbulb size={14} className={`${baseClass} text-amber-500`} />,
@@ -109,6 +113,8 @@ function getStepIcon(type: ReasoningStepType, status: ReasoningStepStatus) {
 function getStepTypeName(type: ReasoningStepType): string {
     const nameMap: Record<ReasoningStepType, string> = {
         thinking: 'Thinking',
+        reasoning: 'Reasoning',
+        routing: 'Intent Routing',
         retrieval: 'Searching',
         workflow: 'Workflow',
         analysis: 'Analyzing',

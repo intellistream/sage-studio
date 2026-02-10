@@ -206,6 +206,36 @@ class VectorStore:
         """生成文本的 embedding 向量"""
         return self.embedder.embed(texts)
 
+    def has_data(self) -> bool:
+        """检查collection是否已有数据（用于跳过重复加载）
+
+        Returns:
+            True if collection已有数据（从磁盘加载或已插入），False otherwise
+        """
+        try:
+            # 初始化collection（如果还没初始化）
+            if self._collection is None:
+                self._init_collection()
+
+            # 检查collection大小
+            if hasattr(self._collection, 'size'):
+                return self._collection.size() > 0
+            elif hasattr(self._collection, '__len__'):
+                return len(self._collection) > 0
+            else:
+                # 尝试检索1条数据判断
+                import numpy as np
+                dummy_vector = np.zeros(self.embedding_dim, dtype=np.float32)
+                results = self._collection.retrieve(
+                    query=dummy_vector,
+                    top_k=1,
+                    index_name="default_index",
+                )
+                return results is not None and len(results) > 0
+        except Exception:
+            # 出错默认认为没有数据
+            return False
+
     async def add_documents(
         self,
         chunks: list[DocumentChunk],
@@ -257,6 +287,10 @@ class VectorStore:
                     import logging
 
                     logging.warning(f"Failed to insert chunk {chunk.chunk_id}: {e}")
+
+        # 持久化到磁盘（重要：确保数据不丢失）
+        if added_count > 0:
+            self.save()
 
         return added_count
 
@@ -393,9 +427,13 @@ class VectorStore:
             是否成功保存
         """
         try:
-            if self._manager is not None:
-                # MemoryManager 自动管理持久化
-                return True
+            if self._manager is not None and self._collection is not None:
+                # 显式调用 MemoryManager.persist 保存到磁盘
+                success = self._manager.persist(self.collection_name)
+                if success:
+                    import logging
+                    logging.info(f"Persisted collection '{self.collection_name}' to {self.persist_dir}")
+                return success
             return False
         except Exception as e:
             import logging

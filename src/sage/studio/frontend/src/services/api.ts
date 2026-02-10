@@ -734,6 +734,7 @@ export async function sendChatMessage(
     const controller = new AbortController()
     // Safety timeout: if no data arrives for 120s, abort the stream
     const STALL_TIMEOUT_MS = 120_000
+    let stallTimer: ReturnType<typeof setTimeout> | null = null
 
     try {
         // Use provided model or fallback to a default
@@ -763,7 +764,6 @@ export async function sendChatMessage(
 
         const decoder = new TextDecoder()
         let buffer = ''
-        let stallTimer: ReturnType<typeof setTimeout> | null = null
 
         const resetStallTimer = () => {
             if (stallTimer) clearTimeout(stallTimer)

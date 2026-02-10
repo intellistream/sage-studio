@@ -206,6 +206,9 @@ class KnowledgeManager:
         self.config = KnowledgeManagerConfig()
         self._load_config(config_path)
 
+        # 自动加载标记为 auto_load 的知识源
+        self._auto_load_sources()
+
     def _load_config(self, config_path: str | Path | None) -> None:
         """加载 YAML 配置"""
         if config_path is None:
@@ -262,6 +265,36 @@ class KnowledgeManager:
         except Exception as e:
             logger.error(f"Error loading config from {config_path}: {e}")
 
+    def _auto_load_sources(self) -> None:
+        """自动加载标记为 auto_load 的知识源（异步转同步）"""
+        auto_load_sources = [
+            name for name, source in self.sources.items()
+            if source.enabled and source.auto_load
+        ]
+
+        if not auto_load_sources:
+            logger.info("No sources marked for auto_load")
+            return
+
+        logger.info(f"Auto-loading knowledge sources: {auto_load_sources}")
+
+        # 在新事件循环中执行异步加载
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            for source_name in auto_load_sources:
+                try:
+                    success = loop.run_until_complete(self.ensure_source_loaded(source_name))
+                    if success:
+                        logger.info(f"Successfully auto-loaded: {source_name}")
+                    else:
+                        logger.warning(f"Failed to auto-load: {source_name}")
+                except Exception as e:
+                    logger.error(f"Error auto-loading {source_name}: {e}", exc_info=True)
+        finally:
+            loop.close()
+
     async def ensure_source_loaded(self, source_name: str) -> bool:
         """确保指定知识源已加载
 
@@ -288,6 +321,12 @@ class KnowledgeManager:
             # 获取或创建向量存储
             vs = self._get_or_create_vector_store(source_name)
 
+            # 检查是否已有持久化数据（避免重复生成embeddings）
+            if vs.has_data():
+                logger.info(f"Collection '{source_name}' already has data, skipping embedding generation")
+                self._loaded_sources.add(source_name)
+                return True
+
             # 加载文档
             chunks = list(
                 self._doc_loader.load_directory(
@@ -305,7 +344,7 @@ class KnowledgeManager:
 
             logger.info(f"Generated {len(chunks)} chunks for {source_name}")
 
-            # 添加到向量存储
+            # 添加到向量存储（会自动持久化）
             count = await vs.add_documents(chunks, batch_size=self.config.embedding.batch_size)
             logger.info(f"Indexed {count} chunks for {source_name}")
 
