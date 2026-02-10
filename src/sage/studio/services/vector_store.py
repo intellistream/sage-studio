@@ -156,9 +156,7 @@ class VectorStore:
 
     def _init_collection(self):
         """初始化 VDB collection"""
-        from sage.middleware.components.sage_mem.neuromem.memory_manager import (
-            MemoryManager,
-        )
+        from neuromem import MemoryManager
 
         # 创建 MemoryManager
         data_dir = str(self.persist_dir)
@@ -239,7 +237,7 @@ class VectorStore:
     async def add_documents(
         self,
         chunks: list[DocumentChunk],
-        batch_size: int = 32,
+        batch_size: int = 128,  # 增加batch size加速embedding生成
     ) -> int:
         """添加文档到向量库
 
@@ -253,14 +251,21 @@ class VectorStore:
         if not chunks:
             return 0
 
+        import logging
+        logger = logging.getLogger(__name__)
+
         added_count = 0
+        total_batches = (len(chunks) + batch_size - 1) // batch_size
+        logger.info(f"Adding {len(chunks)} chunks in {total_batches} batches (batch_size={batch_size})")
 
         # 分批处理
-        for i in range(0, len(chunks), batch_size):
+        for batch_idx, i in enumerate(range(0, len(chunks), batch_size), 1):
             batch = chunks[i : i + batch_size]
             texts = [c.content for c in batch]
 
-            # 生成 embeddings
+            # 生成 embeddings（这是最耗时的步骤）
+            if batch_idx % 10 == 0 or batch_idx == total_batches:
+                logger.info(f"Processing batch {batch_idx}/{total_batches} ({added_count}/{len(chunks)} chunks added so far)")
             embeddings = self._embed(texts)
 
             # 准备向量和元数据
