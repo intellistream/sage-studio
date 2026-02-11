@@ -130,7 +130,7 @@ if [ "$VERSION_UPDATED" = true ]; then
     echo -e "${GREEN}✓ Version updated to ${CURRENT_VERSION}${NC}"
 
     PYPI_CHECK_RESULT=0
-    check_pypi_version_exists
+    check_pypi_version_exists || PYPI_CHECK_RESULT=$?
     PYPI_CHECK_RESULT=$?
 
     if [ "$PYPI_CHECK_RESULT" -eq 0 ]; then
