@@ -588,9 +588,10 @@ class ChatModeManager(StudioManager):
             console.print(f"[red]❌ 启动 sageLLM 引擎失败: {exc}[/red]")
             return False
 
-        # Wait for service to be ready
+        # Wait for service to be ready (phase 1: initial 60s fast poll)
         console.print("[dim]   等待引擎就绪...[/dim]")
         base_url = f"http://127.0.0.1:{self.llm_port}/v1"
+        engine_healthy = False
         for i in range(60):
             # Check if process is still alive
             if proc.poll() is not None:
@@ -598,18 +599,46 @@ class ChatModeManager(StudioManager):
                 console.print(f"   查看日志: {llm_log}")
                 return False
             if self._probe_llm_endpoint(base_url):
+                engine_healthy = True
                 break
             time.sleep(1)
-        else:
-            console.print("[yellow]⚠️  引擎启动超时 (60s)，但进程仍在运行[/yellow]")
+
+        if not engine_healthy:
+            # Phase 2: extended retry with back-off (up to 120s more for CPU cold-start)
+            console.print("[yellow]⚠️  引擎尚未就绪 (60s)，进程仍在运行，继续等待...[/yellow]")
             console.print(f"   查看日志: {llm_log}")
-            # Still try to verify inference below
+            retry_intervals = [2, 3, 5, 5, 5, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]  # ~120s extra
+            for wait_s in retry_intervals:
+                if proc.poll() is not None:
+                    console.print("[red]❌ sageLLM 引擎进程已退出[/red]")
+                    console.print(f"   查看日志: {llm_log}")
+                    return False
+                time.sleep(wait_s)
+                if self._probe_llm_endpoint(base_url):
+                    elapsed_extra = sum(retry_intervals[:retry_intervals.index(wait_s) + 1])
+                    console.print(f"[green]   ✓ 引擎在额外等待 ~{elapsed_extra}s 后就绪[/green]")
+                    engine_healthy = True
+                    break
+
+        if not engine_healthy:
+            console.print("[yellow]⚠️  引擎启动超时 (约180s)，但进程仍在运行[/yellow]")
+            console.print(f"   查看日志: {llm_log}")
+            # Still try to verify inference below as a last-ditch attempt
 
         # Verify engine can actually perform inference
         console.print("[blue]🔍 验证引擎健康状态...[/blue]")
         time.sleep(2)
 
-        if self._test_llm_inference(base_url):
+        # Retry inference test a few times (engine may need warm-up after health OK)
+        inference_ok = False
+        for attempt in range(3):
+            if self._test_llm_inference(base_url):
+                inference_ok = True
+                break
+            if attempt < 2:
+                time.sleep(3)
+
+        if inference_ok:
             console.print("[green]✅ 引擎验证成功，可正常推理[/green]")
             self._last_model_name = model_name
             self._start_health_monitor()

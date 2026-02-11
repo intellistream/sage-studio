@@ -17,9 +17,6 @@ from sage.studio.services.vector_store import (
     create_vector_store,
 )
 
-# Skip: Vector/Embedding requirements - service implementation issue
-pytestmark = pytest.mark.skip(reason="Vector/Embedding requirements")
-
 
 class TestDocumentChunk:
     """Tests for DocumentChunk dataclass."""
