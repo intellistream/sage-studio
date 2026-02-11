@@ -198,12 +198,80 @@ pytest tests/unit/services/test_agent_orchestrator.py -v
 pytest tests/ --cov=sage.studio --cov-report=html
 ```
 
+## ⚙️ Port Configuration
+
+**ALL ports are now environment-variable based** with sensible defaults. Do NOT hardcode port values anywhere.
+
+### Port Mapping Table
+
+| Service | 环境变量 | 默认端口 | 说明 |
+|---------|-----------|---------|-----|
+| **Studio 前端** | `STUDIO_FRONTEND_PORT` | 5173 | React + Vite 开发服务器 |
+| **Studio 后端** | `STUDIO_BACKEND_PORT` | 8080 | FastAPI 后端 API |
+| **Gateway** | `SAGE_GATEWAY_PORT` | 8889 | sagellm Gateway (OpenAI 兼容) |
+| **LLM 推理** | `SAGE_LLM_PORT` | 8001 | vLLM 或 sagellm 推理引擎 |
+| **Embedding** | `SAGE_EMBEDDING_PORT` | 8090 | Embedding 服务 |
+
+### Port Resolution Pattern
+
+**Python 后端** (`src/sage/studio/config/ports.py`):
+```python
+class StudioPorts:
+    FRONTEND = 5173        # 前端开发
+    BACKEND = 8080         # 后端 FastAPI
+    GATEWAY = 8889         # Gateway
+
+def get_frontend_dev_ports() -> list[int]:
+    # 返回所有前端开发端口：[5173, 4173, 35180]
+    return [FRONTEND, FRONTEND_PREVIEW, *FRONTEND_DEV_EXTRA]
+```
+
+**TypeScript 前端** (`src/sage/studio/frontend/src/store/playgroundStore.ts`):
+```typescript
+const resolveBackendApiBaseUrl = (): string => {
+  // 优先级：VITE_BACKEND_BASE_URL > VITE_API_BASE_URL > VITE_BACKEND_PORT > /api
+  const envUrl = import.meta.env.VITE_BACKEND_BASE_URL
+  if (envUrl) return envUrl.replace(/\/$/, '')
+  // 如果设置了端口，构造：http://localhost:${VITE_BACKEND_PORT}/api
+  // 否则使用相对路径 /api
+}
+```
+
+### 环境变量使用示例
+
+```bash
+# 使用默认端口
+sage studio start
+
+# 自定义前端端口
+STUDIO_FRONTEND_PORT=6173 sage studio start
+
+# 自定义多个端口
+STUDIO_FRONTEND_PORT=6173 STUDIO_BACKEND_PORT=9080 SAGE_GATEWAY_PORT=9889 sage studio start
+
+# 前端 Vite 开发服务器
+STUDIO_FRONTEND_PORT=6173 npm run dev
+```
+
+### CORS 与前端开发
+
+后端 CORS 配置 (`src/sage/studio/config/backend/api.py`) 动态支持所有前端开发端口：
+- `localhost:5173` (Vite 开发默认)
+- `localhost:4173` (Vite 预览)
+- `localhost:35180` (备选开发端口)
+
+**新增开发端口** → 更新 `StudioPorts.FRONTEND_DEV_EXTRA` 和 `get_frontend_dev_ports()`
+
+---
+
 ## 🔍 Key Components
 
 ### Backend (`src/sage/studio/config/backend/api.py`)
 
-- FastAPI server on port 8889
+- FastAPI server on `${STUDIO_BACKEND_PORT}` (default: 8080)
 - Endpoints: `/api/flows`, `/api/operators`, `/api/chat`
+- CORS: Dynamically configured from `StudioPorts.get_frontend_dev_ports()`
+- Gateway integration: Reads `SAGE_GATEWAY_HOST` and `SAGE_GATEWAY_PORT`
 - Integrates with SAGE kernel for pipeline execution
 
 ### Services
@@ -214,8 +282,9 @@ pytest tests/ --cov=sage.studio --cov-report=html
 
 ### Frontend (`src/sage/studio/frontend/`)
 
-- React 18 + TypeScript + Vite
+- React 18 + TypeScript + Vite on `${STUDIO_FRONTEND_PORT}` (default: 5173)
 - Flow editor (React Flow), Chat UI, Properties panel
+- API URL resolution: Environment-driven with fallbacks
 - Build: `npm run build` (output: `dist/`)
 
 ## ⚠️ Common Issues
