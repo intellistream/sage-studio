@@ -160,8 +160,8 @@ class EmbeddingConfig:
         max_length: 最大序列长度
     """
 
-    model: str = "BAAI/bge-m3"
-    dim: int = 1024
+    model: str = "BAAI/bge-small-zh-v1.5"
+    dim: int = 512
     batch_size: int = 32
     max_length: int = 512
 
@@ -268,8 +268,7 @@ class KnowledgeManager:
     def _auto_load_sources(self) -> None:
         """自动加载标记为 auto_load 的知识源（异步转同步）"""
         auto_load_sources = [
-            name for name, source in self.sources.items()
-            if source.enabled and source.auto_load
+            name for name, source in self.sources.items() if source.enabled and source.auto_load
         ]
 
         if not auto_load_sources:
@@ -280,8 +279,8 @@ class KnowledgeManager:
 
         # 在新事件循环中执行异步加载
         import asyncio
+
         loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
             for source_name in auto_load_sources:
                 try:
@@ -323,7 +322,9 @@ class KnowledgeManager:
 
             # 检查是否已有持久化数据（避免重复生成embeddings）
             if vs.has_data():
-                logger.info(f"Collection '{source_name}' already has data, skipping embedding generation")
+                logger.info(
+                    f"Collection '{source_name}' already has data, skipping embedding generation"
+                )
                 self._loaded_sources.add(source_name)
                 return True
 
@@ -481,16 +482,24 @@ class KnowledgeManager:
         else:
             target_sources = sources
 
-        # 并行确保源已加载
+        # 并行确保源已加载 (with timeout to avoid blocking)
         load_tasks = []
         for source_name in target_sources:
             if source_name not in self._loaded_sources:
                 load_tasks.append(self.ensure_source_loaded(source_name))
 
         if load_tasks:
-            await asyncio.gather(*load_tasks)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*load_tasks, return_exceptions=True),
+                    timeout=60.0,  # 60s timeout for source loading
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Knowledge source loading timed out after 60s, searching with available sources"
+                )
 
-        # 在各源中检索
+        # 在各源中检索 (only sources that have vector stores ready)
         search_tasks = []
         for source_name in target_sources:
             if source_name in self._vector_stores:
@@ -549,3 +558,26 @@ class KnowledgeManager:
                 }
             )
         return result
+
+
+# ---------------------------------------------------------------------------
+# Module-level singleton
+# ---------------------------------------------------------------------------
+
+import threading as _threading
+
+_km_instance: KnowledgeManager | None = None
+_km_lock = _threading.Lock()
+
+
+def get_knowledge_manager(config_path: str | Path | None = None) -> KnowledgeManager:
+    """Return (and lazily create) a singleton KnowledgeManager.
+
+    This avoids re-creating the manager (and re-triggering auto_load /
+    embedding generation) on every chat request.
+    """
+    global _km_instance
+    with _km_lock:
+        if _km_instance is None:
+            _km_instance = KnowledgeManager(config_path)
+        return _km_instance

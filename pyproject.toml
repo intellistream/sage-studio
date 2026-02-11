@@ -1,8 +1,5 @@
 [build-system]
-requires = [
-    "setuptools>=64",
-    "wheel",
-]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,9 +8,7 @@ dynamic = ["version"]
 description = "SAGE Studio - Visual workflow builder and LLM playground for SAGE AI pipelines"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [
-    { name = "IntelliStream Team", email = "shuhao_zhang@hust.edu.cn" },
-]
+authors = [{ name = "IntelliStream Team", email = "shuhao_zhang@hust.edu.cn" }]
 keywords = [
     "sage",
     "studio",
@@ -47,10 +42,10 @@ dependencies = [
     # Agentic dependencies (independent packages)
     "isage-agentic>=0.1.0",
     "isage-sias>=0.1.0",
-    "isage-libs-intent>=0.1.0",  # Intent recognition (L3)
+    "isage-libs-intent>=0.1.0", # Intent recognition (L3)
 
     # Memory management (independent package)
-    "isage-neuromem>=0.2.0",  # Memory collection & vector storage (L4)
+    "isage-neuromem>=0.2.0", # Memory collection & vector storage (L4)
 
     # Fine-tune dependencies (independent package)
     "isage-finetune>=0.1.0",
@@ -80,23 +75,15 @@ dependencies = [
     "packaging>=24.0,<26.0",  # 兼容 streamlit 1.48.0 等老版本
 ]
 
-license = {text = "MIT"}
+license = { text = "MIT" }
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "ruff==0.14.6",
-]
+dev = ["pytest>=7.4.0", "pytest-asyncio>=0.21.0", "ruff==0.14.6"]
 
 # Full middleware integration (optional)
-middleware = [
-    "isage-middleware>=0.2.0",
-]
+middleware = ["isage-middleware>=0.2.0"]
 
-all = [
-    "isage-studio[middleware]",
-]
+all = ["isage-studio[middleware]"]
 
 [project.urls]
 Homepage = "https://github.com/intellistream/sage-studio"
@@ -137,7 +124,7 @@ where = ["src"]
 ]
 
 [tool.setuptools.dynamic]
-version = {attr = "sage.studio._version.__version__"}
+version = { attr = "sage.studio._version.__version__" }
 
 # Development tools configuration
 [tool.black]
@@ -150,26 +137,11 @@ profile = "black"
 line_length = 100
 
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
-    "src",
-]
-python_files = [
-    "test_*.py",
-    "*_test.py",
-]
-python_classes = [
-    "Test*",
-]
-python_functions = [
-    "test_*",
-]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--verbose",
-    "-ra",
-]
+testpaths = ["tests", "src"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["--strict-markers", "--strict-config", "--verbose", "-ra"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -182,14 +154,8 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = [
-    "src/sage",
-]
-omit = [
-    "*/tests/*",
-    "*/test_*.py",
-    "*/_test_*.py",
-]
+source = ["src/sage"]
+omit = ["*/tests/*", "*/test_*.py", "*/_test_*.py"]
 
 [tool.coverage.report]
 exclude_lines = [

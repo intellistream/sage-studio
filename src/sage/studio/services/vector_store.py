@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-
 from sage.common.config.user_paths import get_user_paths
 
 if TYPE_CHECKING:
@@ -156,7 +155,11 @@ class VectorStore:
 
     def _init_collection(self):
         """初始化 VDB collection"""
+        import logging as _logging
+
         from neuromem import MemoryManager
+
+        _vs_logger = _logging.getLogger(__name__)
 
         # 创建 MemoryManager
         data_dir = str(self.persist_dir)
@@ -166,39 +169,35 @@ class VectorStore:
         self._collection = self._manager.get_collection(self.collection_name)
 
         if self._collection is None:
-            # 如果元数据存在但 collection 获取失败（磁盘数据被删除），先清理元数据
-            if self.collection_name in self._manager.collection_metadata:
-                import logging
+            _vs_logger.info(f"Creating new collection '{self.collection_name}'")
 
-                logging.warning(
-                    f"Collection '{self.collection_name}' metadata exists but data is missing. "
-                    "Cleaning up stale metadata..."
-                )
-                # 直接从元数据中删除
-                del self._manager.collection_metadata[self.collection_name]
-                self._manager._save_manager()
-
-            # 创建新的 VDB collection
-            # MemoryManager.create_collection 需要 config dict 包含所有参数
+            # 创建新的 collection
             collection_config = {
-                "name": self.collection_name,
-                "backend_type": "vdb",
                 "dim": self.embedding_dim,
                 "description": f"SAGE Studio knowledge base: {self.collection_name}",
             }
-            self._collection = self._manager.create_collection(config=collection_config)
+            self._collection = self._manager.create_collection(
+                self.collection_name, collection_config
+            )
 
             if self._collection is None:
                 raise RuntimeError(f"Failed to create collection '{self.collection_name}'")
 
-            # 创建默认索引
-            index_config = {
-                "name": "default_index",
-                "dim": self.embedding_dim,
-                "backend_type": "FAISS",
-                "description": "Default index for knowledge retrieval",
-            }
-            self._collection.create_index(config=index_config)
+            # Register in MemoryManager so persist() can find it
+            self._manager.collections[self.collection_name] = self._collection
+
+            # 创建默认 FAISS 索引
+            self._collection.add_index(
+                "default_index",
+                "faiss",
+                {"dim": self.embedding_dim, "metric": "cosine"},
+            )
+            _vs_logger.info(
+                f"Created collection '{self.collection_name}' with FAISS index (dim={self.embedding_dim})"
+            )
+        else:
+            # Ensure loaded collection is registered in manager
+            self._manager.collections[self.collection_name] = self._collection
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         """生成文本的 embedding 向量"""
@@ -216,22 +215,16 @@ class VectorStore:
                 self._init_collection()
 
             # 检查collection大小
-            if hasattr(self._collection, 'size'):
+            if hasattr(self._collection, "size"):
                 return self._collection.size() > 0
-            elif hasattr(self._collection, '__len__'):
+            elif hasattr(self._collection, "__len__"):
                 return len(self._collection) > 0
             else:
-                # 尝试检索1条数据判断
-                import numpy as np
-                dummy_vector = np.zeros(self.embedding_dim, dtype=np.float32)
-                results = self._collection.retrieve(
-                    query=dummy_vector,
-                    top_k=1,
-                    index_name="default_index",
-                )
-                return results is not None and len(results) > 0
-        except Exception:
-            # 出错默认认为没有数据
+                return len(getattr(self._collection, "raw_data", {})) > 0
+        except Exception as e:
+            import logging
+
+            logging.warning(f"has_data check failed: {e}")
             return False
 
     async def add_documents(
@@ -252,11 +245,14 @@ class VectorStore:
             return 0
 
         import logging
+
         logger = logging.getLogger(__name__)
 
         added_count = 0
         total_batches = (len(chunks) + batch_size - 1) // batch_size
-        logger.info(f"Adding {len(chunks)} chunks in {total_batches} batches (batch_size={batch_size})")
+        logger.info(
+            f"Adding {len(chunks)} chunks in {total_batches} batches (batch_size={batch_size})"
+        )
 
         # 分批处理
         for batch_idx, i in enumerate(range(0, len(chunks), batch_size), 1):
@@ -264,9 +260,15 @@ class VectorStore:
             texts = [c.content for c in batch]
 
             # 生成 embeddings（这是最耗时的步骤）
-            if batch_idx % 10 == 0 or batch_idx == total_batches:
-                logger.info(f"Processing batch {batch_idx}/{total_batches} ({added_count}/{len(chunks)} chunks added so far)")
-            embeddings = self._embed(texts)
+            logger.info(
+                f"Processing batch {batch_idx}/{total_batches} ({added_count}/{len(chunks)} chunks added so far)"
+            )
+
+            try:
+                embeddings = self._embed(texts)
+            except Exception as e:
+                logger.error(f"Embedding generation failed for batch {batch_idx}: {e}")
+                continue
 
             # 准备向量和元数据
             vectors = [np.array(emb, dtype=np.float32) for emb in embeddings]
@@ -276,22 +278,20 @@ class VectorStore:
                     "source_file": chunk.source_file,
                     "chunk_index": str(chunk.chunk_index),
                     "chunk_id": chunk.chunk_id,
+                    "vector": vector,  # Pass vector via metadata for FAISS index
                     **{k: str(v) for k, v in chunk.metadata.items()},
                 }
 
                 try:
                     self.collection.insert(
-                        index_names="default_index",
-                        content=chunk.content,
-                        vector=vector,
+                        text=chunk.content,
                         metadata=metadata,
+                        index_names=["default_index"],
                     )
                     added_count += 1
                 except Exception as e:
                     # 记录错误但继续处理
-                    import logging
-
-                    logging.warning(f"Failed to insert chunk {chunk.chunk_id}: {e}")
+                    logger.warning(f"Failed to insert chunk {chunk.chunk_id}: {e}")
 
         # 持久化到磁盘（重要：确保数据不丢失）
         if added_count > 0:
@@ -321,30 +321,42 @@ class VectorStore:
         query_embedding = self._embed([query])[0]
         query_vector = np.array(query_embedding, dtype=np.float32)
 
-        # 检索 - VDBMemoryCollection.retrieve 接收向量作为 query 参数
-        results = self.collection.retrieve(
-            query=query_vector,  # 传递向量而不是字符串
-            top_k=top_k * 2,  # 多取一些以便过滤
-            index_name="default_index",
-            with_metadata=True,
-        )
+        # UnifiedCollection.retrieve(index_name, query, **params)
+        try:
+            results = self.collection.retrieve(
+                "default_index",
+                query_vector,
+                top_k=top_k * 2,  # 多取一些以便过滤
+            )
+        except Exception as e:
+            import logging
+
+            logging.warning(f"Vector search failed: {e}")
+            return []
 
         if results is None:
             return []
 
         # 转换结果格式并过滤
+        # Note: UnifiedCollection.retrieve returns [{id, text, metadata, created_at}, ...]
+        # Results are already ranked by FAISS similarity (no explicit score field).
         search_results = []
-        for r in results:
-            # 处理不同的结果格式
+        total = len(results)
+        for rank, r in enumerate(results):
             if isinstance(r, dict):
                 content = r.get("text", r.get("content", ""))
-                score = float(r.get("score", r.get("similarity", 0.0)))
+                # FAISS retrieve doesn't include score; use rank-based score
+                score = float(
+                    r.get("score", r.get("similarity", max(0.1, 1.0 - rank / max(total, 1))))
+                )
                 metadata = r.get("metadata", {})
             else:
-                # 如果是其他格式，尝试访问属性
                 content = getattr(r, "text", getattr(r, "content", str(r)))
-                score = float(getattr(r, "score", getattr(r, "similarity", 0.0)))
+                score = float(getattr(r, "score", max(0.1, 1.0 - rank / max(total, 1))))
                 metadata = getattr(r, "metadata", {})
+
+            # Remove internal 'vector' key from metadata before exposing
+            metadata = {k: v for k, v in metadata.items() if k != "vector"}
 
             source = metadata.get("source_file", "unknown")
 
@@ -437,7 +449,10 @@ class VectorStore:
                 success = self._manager.persist(self.collection_name)
                 if success:
                     import logging
-                    logging.info(f"Persisted collection '{self.collection_name}' to {self.persist_dir}")
+
+                    logging.info(
+                        f"Persisted collection '{self.collection_name}' to {self.persist_dir}"
+                    )
                 return success
             return False
         except Exception as e:

@@ -50,8 +50,6 @@ from sage.kernel.api.service.pipeline_service import (
 from sage.kernel.runtime.communication.packet import StopSignal
 from sage.middleware.operators.rag.generator import OpenAIGenerator
 from sage.middleware.operators.rag.promptor import QAPromptor
-
-from sage.studio.config.ports import StudioPorts
 from sage_libs.sage_agentic.intent import IntentClassifier, UserIntent
 from sage_libs.sage_agentic.workflows.router import (
     WorkflowDecision,
@@ -59,6 +57,8 @@ from sage_libs.sage_agentic.workflows.router import (
     WorkflowRoute,
     WorkflowRouter,
 )
+
+from sage.studio.config.ports import StudioPorts
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,9 @@ class IntentStage(MapFunction):
         # Log IntentClassifier initialization details
         self.logger.info(f"IntentStage initialized with mode='llm', classifier={self._classifier}")
 
-    def execute(self, payload: dict[str, Any] | StopSignal | None) -> dict[str, Any] | StopSignal | None:
+    def execute(
+        self, payload: dict[str, Any] | StopSignal | None
+    ) -> dict[str, Any] | StopSignal | None:
         if payload is None or isinstance(payload, StopSignal):
             return payload
 
@@ -148,7 +150,9 @@ class ContextRetrievalStage(MapFunction):
         self._top_k_memory = top_k_memory
         self._top_k_knowledge = top_k_knowledge
 
-    def execute(self, payload: dict[str, Any] | StopSignal | None) -> dict[str, Any] | StopSignal | None:
+    def execute(
+        self, payload: dict[str, Any] | StopSignal | None
+    ) -> dict[str, Any] | StopSignal | None:
         if payload is None or isinstance(payload, StopSignal):
             return payload
 
@@ -177,39 +181,65 @@ class ContextRetrievalStage(MapFunction):
                 loop.close()
 
                 for item in context_items:
-                    snippet = item.content if len(item.content) <= 400 else f"{item.content[:400]}..."
+                    snippet = (
+                        item.content if len(item.content) <= 400 else f"{item.content[:400]}..."
+                    )
                     retrieval_results.append(snippet)
 
-                self.logger.info(f"ContextRetrievalStage: Retrieved {len(context_items)} items from memory")
+                self.logger.info(
+                    f"ContextRetrievalStage: Retrieved {len(context_items)} items from memory"
+                )
             except Exception as e:
                 self.logger.warning(f"ContextRetrievalStage: Memory retrieval failed: {e}")
                 # Continue without memory context
 
         # --- 2. SageVDB-backed knowledge base retrieval ---
         # Only perform KB search for routes that need evidence
-        if route in (WorkflowRoute.SIMPLE_RAG.value, WorkflowRoute.CODE.value, WorkflowRoute.AGENTIC.value):
+        if route in (
+            WorkflowRoute.SIMPLE_RAG.value,
+            WorkflowRoute.CODE.value,
+            WorkflowRoute.AGENTIC.value,
+        ):
             self.logger.info(f"ContextRetrievalStage: Performing KB search (route={route})")
             try:
-                from sage.studio.services.knowledge_manager import KnowledgeManager
+                from sage.studio.services.knowledge_manager import get_knowledge_manager
 
-                km = KnowledgeManager()
+                km = get_knowledge_manager()
+
                 import asyncio
 
                 loop = asyncio.new_event_loop()
-                km_results = loop.run_until_complete(
-                    km.search(query, limit=self._top_k_knowledge, score_threshold=0.4)
-                )
-                loop.close()
+                try:
+                    km_results = loop.run_until_complete(
+                        asyncio.wait_for(
+                            km.search(query, limit=self._top_k_knowledge, score_threshold=0.4),
+                            timeout=30.0,  # 30s timeout for KB search
+                        )
+                    )
+                finally:
+                    loop.close()
 
-                self.logger.info(f"ContextRetrievalStage: KB search returned {len(km_results)} results")
+                self.logger.info(
+                    f"ContextRetrievalStage: KB search returned {len(km_results)} results"
+                )
                 for i, res in enumerate(km_results):
-                    self.logger.info(f"  [{i}] score={res.score:.3f}, source={res.source}, content={res.content[:80]}...")
+                    self.logger.info(
+                        f"  [{i}] score={res.score:.3f}, source={res.source}, content={res.content[:80]}..."
+                    )
                     retrieval_results.append(res.content)
+            except asyncio.TimeoutError:
+                self.logger.warning(
+                    "ContextRetrievalStage: KB search timed out after 30s, continuing without KB context"
+                )
             except Exception as e:
-                self.logger.error(f"ContextRetrievalStage: Knowledge base retrieval failed: {e}", exc_info=True)
+                self.logger.error(
+                    f"ContextRetrievalStage: Knowledge base retrieval failed: {e}", exc_info=True
+                )
                 # Continue without KB context
         else:
-            self.logger.info(f"ContextRetrievalStage: Skipping KB search (route={route}, not RAG/CODE/AGENTIC)")
+            self.logger.info(
+                f"ContextRetrievalStage: Skipping KB search (route={route}, not RAG/CODE/AGENTIC)"
+            )
 
         self.logger.info(f"ContextRetrievalStage: Total {len(retrieval_results)} retrieval results")
         payload["retrieval_results"] = retrieval_results
@@ -223,7 +253,9 @@ class PromptStage(MapFunction):
         super().__init__(**kwargs)
         self._promptor = QAPromptor(config or {})
 
-    def execute(self, payload: dict[str, Any] | StopSignal | None) -> dict[str, Any] | StopSignal | None:
+    def execute(
+        self, payload: dict[str, Any] | StopSignal | None
+    ) -> dict[str, Any] | StopSignal | None:
         if payload is None or isinstance(payload, StopSignal):
             return payload
 
@@ -267,9 +299,7 @@ class GeneratorStage(MapFunction):
             gateway_host = os.environ.get("SAGE_GATEWAY_HOST", "127.0.0.1")
             base_url = f"http://{gateway_host}:{StudioPorts.GATEWAY}/v1"
 
-        model_name = config.get("model_name") or os.environ.get(
-            "SAGE_CHAT_MODEL", "sage-default"
-        )
+        model_name = config.get("model_name") or os.environ.get("SAGE_CHAT_MODEL", "sage-default")
         api_key = config.get("api_key") or os.environ.get("OPENAI_API_KEY", "EMPTY")
 
         return {
@@ -281,7 +311,9 @@ class GeneratorStage(MapFunction):
             "temperature": config.get("temperature", 0.7),
         }
 
-    def execute(self, payload: dict[str, Any] | StopSignal | None) -> dict[str, Any] | StopSignal | None:
+    def execute(
+        self, payload: dict[str, Any] | StopSignal | None
+    ) -> dict[str, Any] | StopSignal | None:
         if payload is None or isinstance(payload, StopSignal):
             return payload
 
@@ -323,7 +355,9 @@ class GeneratorStage(MapFunction):
 class PackageResultStage(MapFunction):
     """Normalise generator output into the final ``{text, meta}`` schema."""
 
-    def execute(self, payload: dict[str, Any] | StopSignal | None) -> dict[str, Any] | StopSignal | None:
+    def execute(
+        self, payload: dict[str, Any] | StopSignal | None
+    ) -> dict[str, Any] | StopSignal | None:
         if payload is None or isinstance(payload, StopSignal):
             return payload
 
@@ -433,6 +467,7 @@ class ChatPipelineService:
 
             # Give pipeline time to start
             import time
+
             time.sleep(0.5)
 
     def stop(self) -> None:
@@ -470,10 +505,14 @@ class ChatPipelineService:
         logger.info("ChatPipelineService.run: Submitting payload to pipeline")
         response_q = self._bridge.submit(payload)
 
-        logger.info(f"ChatPipelineService.run: Waiting for result (timeout={self._request_timeout}s)")
+        logger.info(
+            f"ChatPipelineService.run: Waiting for result (timeout={self._request_timeout}s)"
+        )
         try:
             result = response_q.get(timeout=self._request_timeout)
-            logger.info(f"ChatPipelineService.run: Got result with keys: {list(result.keys()) if isinstance(result, dict) else type(result)}")
+            logger.info(
+                f"ChatPipelineService.run: Got result with keys: {list(result.keys()) if isinstance(result, dict) else type(result)}"
+            )
 
             # Validate result structure
             if not isinstance(result, dict):
