@@ -204,13 +204,13 @@ pytest tests/ --cov=sage.studio --cov-report=html
 
 ### Port Mapping Table
 
-| Service | 环境变量 | 默认端口 | 说明 |
-|---------|-----------|---------|-----|
-| **Studio 前端** | `STUDIO_FRONTEND_PORT` | 5173 | React + Vite 开发服务器 |
-| **Studio 后端** | `STUDIO_BACKEND_PORT` | 8080 | FastAPI 后端 API |
-| **Gateway** | `SAGE_GATEWAY_PORT` | 8889 | sagellm Gateway (OpenAI 兼容) |
-| **LLM 推理** | `SAGE_LLM_PORT` | 8001 | vLLM 或 sagellm 推理引擎 |
-| **Embedding** | `SAGE_EMBEDDING_PORT` | 8090 | Embedding 服务 |
+| Service | 环境变量 | 默认端口 | 备用端口 | 说明 |
+|---------|-----------|---------|---------|-----|
+| **Studio 前端** | `STUDIO_FRONTEND_PORT` | 5173 | 4173, 35180 | React + Vite 开发服务器 |
+| **Studio 后端** | `STUDIO_BACKEND_PORT` | 8080 | - | FastAPI 后端 API |
+| **Gateway** | `SAGE_GATEWAY_PORT` | 8889 | - | sagellm Gateway (OpenAI 兼容) |
+| **LLM 推理** | `SAGE_LLM_PORT` | 8001 | 8901 | vLLM 推理引擎（WSL2 上通常用 8901） |
+| **Embedding** | `SAGE_EMBEDDING_PORT` | 8090 | - | Embedding 服务 |
 
 ### Port Resolution Pattern
 
