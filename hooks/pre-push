@@ -1,6 +1,5 @@
 #!/bin/bash
-# Pre-push hook for sage-studio
-# Lightweight version check + schedules PyPI publish AFTER push completes
+# Pre-push hook — version check + post-push PyPI publish
 #
 # Flow:
 #   1. Check version status (fast)
@@ -21,7 +20,8 @@ NC='\033[0m'
 
 WANT_PUBLISH=false
 REPO_DIR="$(pwd)"
-PUBLISH_LOG="/tmp/sage-studio-publish-$$.log"
+REPO_NAME="$(basename "$REPO_DIR")"
+PUBLISH_LOG="/tmp/${REPO_NAME}-publish-$$.log"
 
 # Safe read: falls back to default if /dev/tty is unavailable (SSH drop, IDE, etc.)
 safe_read() {
@@ -32,6 +32,11 @@ safe_read() {
     else
         eval "$varname=\"$default\""
     fi
+}
+
+# Auto-find _version.py in repo
+find_version_files() {
+    find . -maxdepth 4 -name '_version.py' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -not -path '*/.egg-info/*' -not -path '*/build/*' 2>/dev/null
 }
 
 # Function to update version (supports both static and dynamic versioning)
@@ -48,14 +53,13 @@ update_version() {
     fi
 
     # Try to update _version.py (dynamic version)
-    for VERSION_FILE in src/sage/studio/_version.py src/*/_version.py _version.py; do
-        if [ -f "$VERSION_FILE" ] && grep -q '^__version__ = "' "$VERSION_FILE" 2>/dev/null; then
+    while IFS= read -r VERSION_FILE; do
+        if [ -f "$VERSION_FILE" ] && grep -q '__version__ = "' "$VERSION_FILE" 2>/dev/null; then
             sed -i "s/__version__ = \"${old_version}\"/__version__ = \"${new_version}\"/" "$VERSION_FILE"
             git add "$VERSION_FILE"
             updated=true
-            break
         fi
-    done
+    done < <(find_version_files)
 
     if [ "$updated" = false ]; then
         echo -e "${RED}✗ Failed to update version (no version file found)${NC}"
@@ -81,8 +85,6 @@ schedule_post_push_publish() {
 
     # Fork background job - waits for git push (parent of pre-push) to finish
     (
-        # Wait for the git push process to complete
-        # The pre-push hook's parent is git, wait until it exits
         GIT_PID="$PPID"
         while kill -0 "$GIT_PID" 2>/dev/null; do
             sleep 1
@@ -135,14 +137,14 @@ CURRENT_VERSION=$(grep -oP '^version = "\K[^"]+' pyproject.toml 2>/dev/null || t
 
 # If not found, try _version.py (dynamic version)
 if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" = "unknown" ]; then
-    for VERSION_FILE in src/sage/studio/_version.py src/*/_version.py _version.py; do
+    while IFS= read -r VERSION_FILE; do
         if [ -f "$VERSION_FILE" ]; then
-            CURRENT_VERSION=$(grep -oP '^__version__ = "\K[^"]+' "$VERSION_FILE" 2>/dev/null || true)
+            CURRENT_VERSION=$(grep -oP '__version__ = "\K[^"]+' "$VERSION_FILE" 2>/dev/null || true)
             if [ -n "$CURRENT_VERSION" ]; then
                 break
             fi
         fi
-    done
+    done < <(find_version_files)
 fi
 
 if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" = "unknown" ]; then
@@ -163,17 +165,20 @@ for i in {1..5}; do
 done
 
 if [ "$VERSION_UPDATED" = false ]; then
-    for i in {1..5}; do
-        if git diff HEAD~$i HEAD -- src/sage/studio/_version.py src/*/_version.py _version.py 2>/dev/null | grep -q '^[+-]__version__ = '; then
-            VERSION_UPDATED=true
-            break
-        fi
-    done
+    VERSION_FILES_FOR_DIFF=$(find_version_files | tr '\n' ' ')
+    if [ -n "$VERSION_FILES_FOR_DIFF" ]; then
+        for i in {1..5}; do
+            if git diff HEAD~$i HEAD -- $VERSION_FILES_FOR_DIFF 2>/dev/null | grep -q '^[+-]__version__ = '; then
+                VERSION_UPDATED=true
+                break
+            fi
+        done
+    fi
 fi
 
 # --- Version Updated Path ---
 if [ "$VERSION_UPDATED" = true ]; then
-    echo -e "${GREEN}✓ Version updated to ${CURRENT_VERSION}${NC}"
+    echo -e "${GREEN}✓ [${REPO_NAME}] Version updated to ${CURRENT_VERSION}${NC}"
 
     # Quick PyPI check (5s timeout, non-blocking)
     PYPI_CHECK_RESULT=1
@@ -235,7 +240,7 @@ PY
 
 # --- Version NOT Updated Path ---
 else
-    echo -e "${YELLOW}⚠ Version not updated (current: ${CURRENT_VERSION})${NC}"
+    echo -e "${YELLOW}⚠ [${REPO_NAME}] Version not updated (current: ${CURRENT_VERSION})${NC}"
     echo -e "  ${GREEN}[u]${NC} Update version  ${YELLOW}[y]${NC} Continue  ${RED}[n]${NC} Cancel"
     echo -n "Choice [u/y/n]: "
     safe_read response "y"
