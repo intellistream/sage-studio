@@ -1,5 +1,20 @@
 import { create } from 'zustand'
 
+const resolveBackendApiBaseUrl = (): string => {
+    const envUrl = import.meta.env.VITE_BACKEND_BASE_URL || import.meta.env.VITE_API_BASE_URL
+    if (envUrl) {
+        if (envUrl.startsWith('/')) {
+            return typeof window !== 'undefined' ? `${window.location.origin}${envUrl}` : envUrl
+        }
+        return envUrl.replace(/\/$/, '')
+    }
+    const envPort = import.meta.env.VITE_BACKEND_PORT
+    if (envPort) {
+        return `http://localhost:${envPort}/api`
+    }
+    return typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api'
+}
+
 // 消息类型
 export interface Message {
     id: string
@@ -278,13 +293,14 @@ export const usePlaygroundStore = create<PlaygroundState>((set, get) => ({
 
     generateCode: (flowId, apiKey) => {
         const lang = get().codeLanguage
+        const apiBaseUrl = resolveBackendApiBaseUrl()
         let code = ''
 
         if (lang === 'python') {
             code = `import requests
 
 # SAGE Studio API Configuration
-API_URL = "http://localhost:8889/api"
+API_URL = "${apiBaseUrl}"
 FLOW_ID = "${flowId}"
 API_KEY = "${apiKey}"
 
@@ -312,7 +328,7 @@ else:
         } else {
             code = `# Execute SAGE Studio Flow
 
-curl -X POST "http://localhost:8889/api/playground/execute/${flowId}" \\
+curl -X POST "${apiBaseUrl}/playground/execute/${flowId}" \\
   -H "Authorization: Bearer ${apiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{

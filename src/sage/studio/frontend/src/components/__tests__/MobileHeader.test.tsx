@@ -20,6 +20,8 @@ vi.mock('../store/themeStore', () => ({
 }))
 
 describe('MobileHeader', () => {
+    const defaultBaseUrl =
+        import.meta.env.VITE_LLM_BASE_URL || import.meta.env.VITE_API_BASE_URL || '/api'
     const defaultProps = {
         onMenuClick: vi.fn(),
         onNewChat: vi.fn(),
@@ -28,7 +30,7 @@ describe('MobileHeader', () => {
             running: true,
             healthy: true,
             service_type: 'local_vllm' as const,
-            base_url: 'http://localhost:8001',
+            base_url: defaultBaseUrl,
             is_local: true,
         },
         onSelectModel: vi.fn(),

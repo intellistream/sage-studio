@@ -112,8 +112,8 @@ sage studio chat start
 ```
 
 - 默认使用 Vite dev server（`--prod` 可选择生产模式）
-- 前端默认地址 `http://localhost:5173`
-- Gateway 默认端口 `8000`，可用 `--gateway-port` 修改
+- 前端默认地址 `http://localhost:${STUDIO_FRONTEND_PORT}`
+- Gateway 默认端口 `${SAGE_GATEWAY_PORT}`（默认 8889），可用 `--gateway-port` 修改
 
 ### 2. 手动启动（调试场景）
 
@@ -134,7 +134,7 @@ sage studio npm run dev
 
 1. **模式切换**
 
-   - 打开浏览器访问 `http://localhost:5173`
+   - 打开浏览器访问 `http://localhost:${STUDIO_FRONTEND_PORT}`
    - 在顶部工具栏看到 "Builder" 和 "Chat" 切换按钮
    - 点击 "Chat" 切换到聊天模式
 
@@ -210,11 +210,11 @@ sage studio npm run dev
 ### 问题：发送消息无响应
 
 - **检查**: Network 标签页是否有 404 错误
-- **解决**: 确认 sage-studio backend 正在运行（端口 8080）
+- **解决**: 确认 sage-studio backend 正在运行（端口 ${STUDIO_BACKEND_PORT}）
 
 ### 问题：SSE 连接失败
 
-- **检查**: sage-gateway 是否运行（端口 9000）
+- **检查**: sage-gateway 是否运行（端口 ${SAGE_GATEWAY_PORT}）
 - **检查**: CORS 配置是否正确
 - **解决**: 查看 gateway 日志，确认 `/v1/chat/completions` 端点正常
 
@@ -225,7 +225,7 @@ sage studio npm run dev
 
 ## API 端点总结
 
-### Studio Backend (`:8080`)
+### Studio Backend (`:${STUDIO_BACKEND_PORT}`)
 
 ```
 POST   /api/chat/message          # 发送消息（代理到 gateway）
@@ -233,7 +233,7 @@ GET    /api/chat/sessions         # 获取会话列表
 DELETE /api/chat/sessions/{id}    # 删除会话
 ```
 
-### Gateway (`:9000`)
+### Gateway (`:${SAGE_GATEWAY_PORT}`)
 
 ```
 POST   /v1/chat/completions       # OpenAI 兼容的聊天接口

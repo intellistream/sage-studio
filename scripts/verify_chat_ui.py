@@ -5,7 +5,10 @@ Phase 2 Chat UI Verification Script
 """
 
 import json
+import os
 from pathlib import Path
+
+from sage.studio.config.ports import StudioPorts
 
 # 颜色代码
 GREEN = "\033[92m"
@@ -154,13 +157,15 @@ def main():
     if not check_file_exists(str(test_doc_path)):
         all_passed = False
 
+    frontend_port = int(os.getenv("STUDIO_FRONTEND_PORT", str(StudioPorts.FRONTEND)))
+
     # 最终结果
     print("\n" + "=" * 60)
     if all_passed:
         print(f"{GREEN}✅ All checks passed!{RESET}")
         print(f"\n{YELLOW}Next steps:{RESET}")
         print("  1. Run chat mode: sage studio chat start")
-        print("  2. Open browser: http://localhost:5173")
+        print(f"  2. Open browser: http://localhost:{frontend_port}")
         print("  3. Switch to 'Chat' tab in the toolbar")
         print("  4. Use 'sage studio chat stop' to shut everything down")
         return 0

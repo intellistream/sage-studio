@@ -192,8 +192,8 @@ SAGE Studio v2.0 引入了完整的用户认证和数据隔离系统：
 
 **访问地址**：
 
-- 🌐 前端：http://localhost:5173
-- 🔌 后端：http://localhost:8080
+- 🌐 前端：http://localhost:${STUDIO_FRONTEND_PORT}
+- 🔌 后端：http://localhost:${STUDIO_BACKEND_PORT}
 
 **注意**：首次使用或开发调试时，建议使用 `--dev` 开发模式，启动更快且支持热重载。
 
@@ -203,24 +203,24 @@ SAGE Studio v2.0 引入了完整的用户认证和数据隔离系统：
 # 终端 1: 启动后端
 cd packages/sage-studio
 python -m sage.studio.config.backend.api
-# 后端运行在: http://localhost:8080
+# 后端运行在: http://localhost:${STUDIO_BACKEND_PORT}
 
 # 终端 2: 启动前端
 cd packages/sage-studio/src/sage/studio/frontend
 sage studio npm install
 sage studio npm run dev
-# 前端运行在: http://localhost:5173
+# 前端运行在: http://localhost:${STUDIO_FRONTEND_PORT}
 ```
 
 ### 检查服务状态
 
 ```bash
 # 检查端口
-lsof -i :8080  # 后端
-lsof -i :5173  # 前端
+lsof -i :${STUDIO_BACKEND_PORT}  # 后端
+lsof -i :${STUDIO_FRONTEND_PORT}  # 前端
 
 # 检查后端健康
-curl http://localhost:8080/health
+curl http://localhost:${STUDIO_BACKEND_PORT}/health
 
 # 查看日志
 tail -f /tmp/sage-studio-backend.log
@@ -233,7 +233,7 @@ tail -f /tmp/sage-studio-frontend.log
 
 **步骤**:
 
-1. 在浏览器打开 http://localhost:5173
+1. 在浏览器打开 http://localhost:${STUDIO_FRONTEND_PORT}
 1. 从左侧节点面板拖拽节点到画布
 1. 连接节点创建数据流
 1. 点击节点配置参数（右侧属性面板）
@@ -326,7 +326,7 @@ FileSource → SimpleRetriever → BGEReranker → QAPromptor → OpenAIGenerato
 cd src/sage/studio/frontend
 
 # 开发模式
-sage studio npm run dev          # 启动 Vite dev server (localhost:5173)
+sage studio npm run dev          # 启动 Vite dev server (localhost:$STUDIO_FRONTEND_PORT)
 
 # 生产构建
 sage studio npm run build        # 构建到 dist/
@@ -346,10 +346,10 @@ cd packages/sage-studio
 python -m sage.studio.config.backend.api
 
 # 验证运行
-curl http://localhost:8080/health
+curl http://localhost:${STUDIO_BACKEND_PORT}/health
 
 # 查看 API 文档
-open http://localhost:8080/docs  # Swagger UI
+open http://localhost:${STUDIO_BACKEND_PORT}/docs  # Swagger UI
 ```
 
 ## 📂 目录结构
@@ -526,9 +526,9 @@ FastAPI + Python 3.10+
 ### 数据流
 
 ```
-前端 (localhost:5173)
+前端 (localhost:$STUDIO_FRONTEND_PORT)
     ↓ HTTP REST
-后端 API (localhost:8080)
+后端 API (localhost:$STUDIO_BACKEND_PORT)
     ↓ Python API
 SAGE 引擎
     ├─> sage-kernel (执行引擎)
@@ -623,8 +623,8 @@ elif source_type == "my_source":
 
 ```bash
 # 1. 检查端口占用
-lsof -i :5173  # 前端
-lsof -i :8080  # 后端
+lsof -i :${STUDIO_FRONTEND_PORT}  # 前端
+lsof -i :${STUDIO_BACKEND_PORT}  # 后端
 
 # 2. 查看日志
 sage studio logs          # 前端日志
@@ -635,8 +635,8 @@ tail -f ~/.sage/studio_backend.log
 tail -f ~/.sage/studio.log
 
 # 3. 测试后端 API
-curl http://localhost:8080/health
-curl http://localhost:8080/api/operators
+curl http://localhost:${STUDIO_BACKEND_PORT}/health
+curl http://localhost:${STUDIO_BACKEND_PORT}/api/operators
 
 # 4. 清理缓存
 rm -rf ~/.sage/studio/node_modules
@@ -751,7 +751,7 @@ sage studio npm run lint
 ps aux | grep "sage.studio.config.backend.api"
 
 # 检查端口
-lsof -i :8080
+lsof -i :${STUDIO_BACKEND_PORT}
 
 # 查看日志
 tail -f /tmp/sage-studio-backend.log
@@ -765,7 +765,7 @@ python -m sage.studio.config.backend.api &
 
 - ❌ SAGE 包未正确安装 → `pip install -e packages/sage-kernel packages/sage-middleware packages/sage-libs`
 - ❌ 缺少依赖 → `pip install -e packages/sage-studio`
-- ❌ 端口被占用 → `lsof -i :8080` 查看占用进程
+- ❌ 端口被占用 → `lsof -i :${STUDIO_BACKEND_PORT}` 查看占用进程
 
 #### 2. 前端编译/启动错误
 
@@ -786,7 +786,7 @@ sage studio npm run dev
 
 - ❌ Node.js 版本过低 → 需要 18+
 - ❌ npm 依赖损坏 → 删除 `node_modules` 重新安装
-- ❌ 端口被占用 → Vite 会自动尝试 5174, 5175...
+- ❌ 端口被占用 → Vite 会自动尝试下一个可用端口
 
 #### 3. Pipeline 执行失败
 
@@ -813,7 +813,7 @@ python -c "from sage.libs.io.source import FileSource; print('✓ libs OK')"
 ls ~/.sage/pipelines/
 
 # 检查后端 API
-curl -X POST http://localhost:8080/api/playground/execute \
+curl -X POST http://localhost:${STUDIO_BACKEND_PORT}/api/playground/execute \
   -H "Content-Type: application/json" \
   -d '{"flowId": "pipeline_xxx", "input": "test", "sessionId": "test"}'
 ```
@@ -821,19 +821,19 @@ curl -X POST http://localhost:8080/api/playground/execute \
 **可能原因**:
 
 - ❌ Flow 未保存 → 先保存 Flow
-- ❌ 后端未启动 → 检查 `lsof -i :8080`
+- ❌ 后端未启动 → 检查 `lsof -i :${STUDIO_BACKEND_PORT}`
 - ❌ 网络请求失败 → 检查浏览器控制台
 
 #### 5. 端口被占用
 
 ```bash
 # 查看占用
-lsof -i :5173  # 前端
-lsof -i :8080  # 后端
+lsof -i :${STUDIO_FRONTEND_PORT}  # 前端
+lsof -i :${STUDIO_BACKEND_PORT}  # 后端
 
 # 杀死进程
-kill -9 $(lsof -t -i:5173)
-kill -9 $(lsof -t -i:8080)
+kill -9 $(lsof -t -i:${STUDIO_FRONTEND_PORT})
+kill -9 $(lsof -t -i:${STUDIO_BACKEND_PORT})
 
 # 或使用 SAGE CLI
 sage studio stop
@@ -864,8 +864,8 @@ pwd  # 应该在 SAGE 项目根目录或 sage-studio 目录
 ```bash
 # 1. 停止所有服务
 sage studio stop
-kill -9 $(lsof -t -i:8080)
-kill -9 $(lsof -t -i:5173)
+kill -9 $(lsof -t -i:${STUDIO_BACKEND_PORT})
+kill -9 $(lsof -t -i:${STUDIO_FRONTEND_PORT})
 
 # 2. 清理缓存
 rm -rf ~/.sage/studio/

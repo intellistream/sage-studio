@@ -9,6 +9,7 @@ import importlib
 import inspect
 import ipaddress
 import json
+import logging
 import os
 import sys
 import time
@@ -44,6 +45,8 @@ from sage.studio.services.stream_handler import pipeline_result_to_openai_sse
 GATEWAY_HOST = os.getenv("SAGE_GATEWAY_HOST", "127.0.0.1")
 GATEWAY_BASE_URL = f"http://{GATEWAY_HOST}:{StudioPorts.GATEWAY}"
 
+logger = logging.getLogger(__name__)
+
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
@@ -57,21 +60,13 @@ try:
         if env_file.exists():
             load_dotenv(env_file, override=True)  # override=True to ensure env vars are updated
             # Use logging instead of print for production
-            import logging
-
-            logging.info(f"Loaded environment variables from {env_file}")
+            logger.info("Loaded environment variables from %s", env_file)
         else:
-            import logging
-
-            logging.warning(f".env file not found at {env_file}")
+            logger.warning(".env file not found at %s", env_file)
     else:
-        import logging
-
-        logging.warning("Could not find SAGE project root, skipping .env loading")
+        logger.warning("Could not find SAGE project root, skipping .env loading")
 except ImportError as e:
-    import logging
-
-    logging.warning(f"Failed to load environment: {e}")
+    logger.warning("Failed to load environment: %s", e, exc_info=True)
 
 
 def _convert_pipeline_to_job(
@@ -121,15 +116,17 @@ def _convert_pipeline_to_job(
             timestamp = int(timestamp_str)
             create_time = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
         except (ValueError, OSError) as e:
-            print(f"Failed to parse timestamp from pipeline_id {pipeline_id}: {e}")
+            logger.warning(
+                "Failed to parse timestamp from pipeline_id %s", pipeline_id, exc_info=True
+            )
 
     # 方法2: 如果解析失败,使用文件的修改时间
     if create_time is None and file_path and file_path.exists():
         try:
             mtime = file_path.stat().st_mtime
             create_time = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
-        except Exception as e:
-            print(f"Failed to get file mtime for {file_path}: {e}")
+        except Exception:
+            logger.warning("Failed to get file mtime for %s", file_path, exc_info=True)
 
     # 方法3: 兜底使用当前时间
     if create_time is None:
@@ -306,15 +303,13 @@ app = FastAPI(
 
 # 动态构建允许的来源列表
 allowed_origins = [
-    "http://localhost:5173",  # Vite 开发服务器默认端口
-    "http://localhost:4173",  # Vite preview 服务器默认端口
     f"http://localhost:{StudioPorts.FRONTEND}",
     f"http://127.0.0.1:{StudioPorts.FRONTEND}",
     f"http://0.0.0.0:{StudioPorts.FRONTEND}",
 ]
 
 # 添加常用开发端口
-for port in [5173, 4173, 35180]:
+for port in StudioPorts.get_frontend_dev_ports():
     if port != StudioPorts.FRONTEND:
         allowed_origins.extend(
             [
@@ -424,8 +419,8 @@ async def logout(
         if user_dir.exists():
             try:
                 shutil.rmtree(user_dir)
-            except Exception as e:
-                print(f"Error deleting guest data: {e}")
+            except Exception:
+                logger.warning("Error deleting guest data", exc_info=True)
 
     return {"message": "Successfully logged out"}
 
@@ -452,8 +447,8 @@ def _read_sage_data_from_files(user_id: str | None = None):
                     with open(job_file, encoding="utf-8") as f:
                         job_data = json.load(f)
                         data["jobs"].append(job_data)
-                except Exception as e:
-                    print(f"Error reading job file {job_file}: {e}")
+                except Exception:
+                    logger.warning("Error reading job file %s", job_file, exc_info=True)
 
         # 读取保存的拓扑图并转换为 Job 格式
         pipelines_dir = user_sage_dir / "pipelines"
@@ -467,8 +462,10 @@ def _read_sage_data_from_files(user_id: str | None = None):
                             pipeline_data, pipeline_file.stem, pipeline_file
                         )
                         data["jobs"].append(job_from_pipeline)
-                except Exception as e:
-                    print(f"Error reading pipeline file {pipeline_file}: {e}")
+                except Exception:
+                    logger.warning(
+                        "Error reading pipeline file %s", pipeline_file, exc_info=True
+                    )
 
         # 读取操作符信息
         operators_file = global_sage_dir / "output" / "operators.json"
@@ -477,8 +474,8 @@ def _read_sage_data_from_files(user_id: str | None = None):
                 with open(operators_file, encoding="utf-8") as f:
                     operators_data = json.load(f)
                     data["operators"] = operators_data
-            except Exception as e:
-                print(f"Error reading operators file: {e}")
+            except Exception:
+                logger.warning("Error reading operators file", exc_info=True)
 
         # 读取管道信息
         pipelines_file = global_sage_dir / "output" / "pipelines.json"
@@ -487,11 +484,11 @@ def _read_sage_data_from_files(user_id: str | None = None):
                 with open(pipelines_file) as f:
                     pipelines_data = json.load(f)
                     data["pipelines"] = pipelines_data
-            except Exception as e:
-                print(f"Error reading pipelines file: {e}")
+            except Exception:
+                logger.warning("Error reading pipelines file", exc_info=True)
 
-    except Exception as e:
-        print(f"Error reading SAGE data: {e}")
+    except Exception:
+        logger.exception("Error reading SAGE data")
 
     return data
 
@@ -511,12 +508,14 @@ async def get_all_jobs(
         sage_data = _read_sage_data_from_files(user_id=str(current_user.id))
         jobs = sage_data.get("jobs", [])
 
-        print(f"DEBUG: Read {len(jobs)} jobs from files for user {current_user.username}")
-        print(f"DEBUG: sage_data = {sage_data}")
+        logger.debug(
+            "Read %s jobs from files for user %s", len(jobs), current_user.username
+        )
+        logger.debug("sage_data = %s", sage_data)
 
         # 如果没有实际数据，返回一些示例数据（用于开发）
         if not jobs:
-            print("DEBUG: No real jobs found, using fallback data")
+            logger.info("No real jobs found, using fallback data")
             jobs = [
                 {
                     "jobId": "job_001",
@@ -604,7 +603,7 @@ def _load_operator_class_source(module_path: str, class_name: str) -> str:
         return source_code
 
     except Exception as e:
-        print(f"Error loading operator class {module_path}.{class_name}: {e}")
+        logger.exception("Error loading operator class %s.%s", module_path, class_name)
         return f"# Error loading source code for {class_name}\n# {str(e)}"
 
 
@@ -614,7 +613,7 @@ def _read_real_operators():
     operators_dir = _get_studio_operators_dir()
 
     if not operators_dir.exists():
-        print(f"Operators directory not found: {operators_dir}")
+        logger.warning("Operators directory not found: %s", operators_dir)
         return []
 
     try:
@@ -648,17 +647,19 @@ def _read_real_operators():
                             "parameters": operator_data.get("parameters", []),  # 添加参数配置
                         }
                         operators.append(clean_data)
-                        print(
-                            f"Loaded operator: {operator_data['name']} with {len(clean_data['parameters'])} parameters"
+                        logger.debug(
+                            "Loaded operator: %s with %s parameters",
+                            operator_data["name"],
+                            len(clean_data["parameters"]),
                         )
                     else:
-                        print(f"Invalid operator data in {json_file}")
+                        logger.warning("Invalid operator data in %s", json_file)
 
-            except Exception as e:
-                print(f"Error reading operator file {json_file}: {e}")
+            except Exception:
+                logger.warning("Error reading operator file %s", json_file, exc_info=True)
 
-    except Exception as e:
-        print(f"Error reading operators directory: {e}")
+    except Exception:
+        logger.exception("Error reading operators directory")
 
     return operators
 
@@ -672,7 +673,7 @@ async def get_operators():
 
         # 如果没有找到真实数据，使用后备数据
         if not operators:
-            print("No real operator data found, using fallback data")
+            logger.info("No real operator data found, using fallback data")
             operators = [
                 {
                     "id": 1,
@@ -690,10 +691,10 @@ async def get_operators():
                 },
             ]
 
-        print(f"Returning {len(operators)} operators")
+        logger.debug("Returning %s operators", len(operators))
         return operators
     except Exception as e:
-        print(f"Error in get_operators: {e}")
+        logger.exception("Error in get_operators")
         raise HTTPException(status_code=500, detail=f"获取操作符信息失败: {str(e)}")
 
 
@@ -706,7 +707,7 @@ async def get_operators_list(page: int = 1, size: int = 10, search: str = ""):
 
         # 如果没有找到真实数据，使用后备数据
         if not all_operators:
-            print("No real operator data found, using fallback data")
+            logger.info("No real operator data found, using fallback data")
             all_operators = [
                 {
                     "id": 1,
@@ -743,11 +744,13 @@ async def get_operators_list(page: int = 1, size: int = 10, search: str = ""):
 
         result = {"items": items, "total": total}
 
-        print(f"Returning page {page} with {len(items)} operators (total: {total})")
+        logger.debug(
+            "Returning page %s with %s operators (total: %s)", page, len(items), total
+        )
         return result
 
     except Exception as e:
-        print(f"Error in get_operators_list: {e}")
+        logger.exception("Error in get_operators_list")
         raise HTTPException(status_code=500, detail=f"获取操作符列表失败: {str(e)}")
 
 
@@ -802,7 +805,11 @@ async def submit_pipeline(
 ):
     """提交拓扑图/管道配置"""
     try:
-        print(f"Received pipeline submission from {current_user.username}: {topology_data}")
+        logger.info(
+            "Received pipeline submission from %s: %s",
+            current_user.username,
+            topology_data,
+        )
 
         # 这里可以添加保存到文件或数据库的逻辑
         pipelines_dir = get_user_pipelines_dir(str(current_user.id))
@@ -824,7 +831,7 @@ async def submit_pipeline(
             "file_path": str(pipeline_file),
         }
     except Exception as e:
-        print(f"Error submitting pipeline: {e}")
+        logger.exception("Error submitting pipeline")
         raise HTTPException(status_code=500, detail=f"提交拓扑图失败: {str(e)}")
 
 
@@ -853,7 +860,7 @@ async def get_job_detail(job_id: str):
             return job
 
         # 如果没有找到实际数据，返回占位符数据（用于开发）
-        print(f"Job {job_id} not found in saved data, returning placeholder")
+        logger.info("Job %s not found in saved data, returning placeholder", job_id)
         return {
             "jobId": job_id,
             "name": f"管道 {job_id}",
@@ -919,7 +926,7 @@ async def get_job_detail(job_id: str):
             ],
         }
     except Exception as e:
-        print(f"Error getting job detail: {e}")
+        logger.exception("Error getting job detail")
         raise HTTPException(status_code=500, detail=f"获取作业详情失败: {str(e)}")
 
 
@@ -939,7 +946,7 @@ async def get_job_status(job_id: str):
         )
         return status
     except Exception as e:
-        print(f"Error getting job status: {e}")
+        logger.exception("Error getting job status")
         raise HTTPException(status_code=500, detail=f"获取作业状态失败: {str(e)}")
 
 
@@ -963,7 +970,7 @@ async def start_job(job_id: str):
 
         return {"status": "success", "message": f"作业 {job_id} 已启动"}
     except Exception as e:
-        print(f"Error starting job: {e}")
+        logger.exception("Error starting job")
         raise HTTPException(status_code=500, detail=f"启动作业失败: {str(e)}")
 
 
@@ -985,7 +992,7 @@ async def stop_job(job_id: str, duration: str):
 
         return {"status": "success", "message": f"作业 {job_id} 已停止"}
     except Exception as e:
-        print(f"Error stopping job: {e}")
+        logger.exception("Error stopping job")
         raise HTTPException(status_code=500, detail=f"停止作业失败: {str(e)}")
 
 
@@ -1010,7 +1017,7 @@ async def get_job_logs(job_id: str, offset: int = 0):
 
         return {"offset": new_offset, "lines": new_logs}
     except Exception as e:
-        print(f"Error getting job logs: {e}")
+        logger.exception("Error getting job logs")
         raise HTTPException(status_code=500, detail=f"获取作业日志失败: {str(e)}")
 
 
@@ -1021,10 +1028,10 @@ async def get_all_batches(job_id: str, operator_id: str):
         # operator_id 可以是字符串（如 "s1", "r1"）或数字
         # 返回空数组作为占位符
         # 实际实现需要从 SAGE 运行时获取批次统计数据
-        print(f"Getting batches for job={job_id}, operator={operator_id}")
+        logger.debug("Getting batches for job=%s, operator=%s", job_id, operator_id)
         return []
     except Exception as e:
-        print(f"Error getting batches: {e}")
+        logger.exception("Error getting batches")
         raise HTTPException(status_code=500, detail=f"获取批次信息失败: {str(e)}")
 
 
@@ -1042,7 +1049,7 @@ async def get_batch_detail(job_id: str, batch_id: int, operator_id: str):
             "timestamp": "2025-10-10 15:30:00",
         }
     except Exception as e:
-        print(f"Error getting batch detail: {e}")
+        logger.exception("Error getting batch detail")
         raise HTTPException(status_code=500, detail=f"获取批次详情失败: {str(e)}")
 
 
@@ -1077,7 +1084,7 @@ operators:
 """
         return {"config": default_config}
     except Exception as e:
-        print(f"Error getting pipeline config: {e}")
+        logger.exception("Error getting pipeline config")
         raise HTTPException(status_code=500, detail=f"获取管道配置失败: {str(e)}")
 
 
@@ -1104,7 +1111,7 @@ async def update_pipeline_config(pipeline_id: str, config: dict):
             "file_path": str(config_file),
         }
     except Exception as e:
-        print(f"Error updating pipeline config: {e}")
+        logger.exception("Error updating pipeline config")
         raise HTTPException(status_code=500, detail=f"更新管道配置失败: {str(e)}")
 
 
@@ -1119,22 +1126,22 @@ def _load_flow_data(flow_id: str, user_id: str | None = None) -> dict | None:
         sage_dir = _get_sage_dir()
         pipelines_dir = sage_dir / "pipelines"
 
-    print(f"🔍 Looking for flow: {flow_id}")
-    print(f"📁 Pipelines dir: {pipelines_dir}")
-    print(f"📁 Pipelines dir exists: {pipelines_dir.exists()}")
+    logger.debug("Looking for flow: %s", flow_id)
+    logger.debug("Pipelines dir: %s", pipelines_dir)
+    logger.debug("Pipelines dir exists: %s", pipelines_dir.exists())
 
     # 尝试加载 pipeline 文件
     flow_file = pipelines_dir / f"{flow_id}.json"
-    print(f"📄 Flow file path: {flow_file}")
-    print(f"📄 Flow file exists: {flow_file.exists()}")
+    logger.debug("Flow file path: %s", flow_file)
+    logger.debug("Flow file exists: %s", flow_file.exists())
 
     if flow_file.exists():
         with open(flow_file, encoding="utf-8") as f:
             data = json.load(f)
-            print(f"✅ Loaded flow: {data.get('name', 'Unnamed')}")
+                logger.info("Loaded flow: %s", data.get("name", "Unnamed"))
             return data
 
-    print("❌ Flow file not found")
+            logger.info("Flow file not found")
     return None
 
 
@@ -1170,7 +1177,7 @@ def _convert_to_flow_definition(flow_data: dict, flow_id: str):
         node_id = node_data.get("data", {}).get("nodeId", "unknown")
         node_type = convert_node_type_to_snake_case(node_id)
 
-        print(f"🔄 Converting node: {node_id} → {node_type}")
+        logger.debug("Converting node: %s -> %s", node_id, node_type)
 
         node = VisualNode(
             id=node_data.get("id", ""),
@@ -1301,14 +1308,13 @@ async def execute_playground(
         from sage.studio.models import PipelineStatus
         from sage.studio.services import get_pipeline_builder
 
-        logger = logging.getLogger(__name__)
         logger.info(
             "Playground execute: user=%s, flow=%s, input=%s",
             current_user.username, request.flowId, request.input[:80],
         )
-        print(f"   Session: {request.sessionId}")
-        print(f"   Input: {request.input[:100]}...")
-        print(f"{'=' * 60}\n")
+        logger.debug("Session: %s", request.sessionId)
+        logger.debug("Input: %s...", request.input[:100])
+        logger.debug("%s", "=" * 60)
 
         # 1. 加载 Flow 定义
         flow_data = _load_flow_data(request.flowId, user_id=str(current_user.id))
@@ -1317,7 +1323,7 @@ async def execute_playground(
 
         # 2. 转换为 VisualPipeline
         visual_pipeline = _convert_to_flow_definition(flow_data, request.flowId)
-        print(f"📊 Pipeline 节点数: {len(visual_pipeline.nodes)}")
+        logger.info("Pipeline nodes: %s", len(visual_pipeline.nodes))
 
         # 3. 🆕 使用增强的 PipelineBuilder (传入用户输入)
         builder = get_pipeline_builder()
@@ -1325,13 +1331,13 @@ async def execute_playground(
 
         # 4. 执行并收集结果
         start_time = time.time()
-        print("⚙️ 开始执行...")
+        logger.info("Start execution")
 
         # 提交作业并等待完成
         sage_env.submit(autostop=True)
 
         execution_time = time.time() - start_time
-        print(f"✅ 执行完成,耗时: {execution_time:.2f}秒\n")
+        logger.info("Execution completed in %.2f seconds", execution_time)
 
         # 5. 🆕 收集执行结果
         from sage.libs.io.sink import RetriveSink
@@ -1345,9 +1351,9 @@ async def execute_playground(
             results, visual_pipeline, execution_time
         )
 
-        print(f"📤 输出长度: {len(output_text)} 字符")
-        print(f"📋 步骤数: {len(agent_steps)}")
-        print(f"{'=' * 60}\n")
+        logger.info("Output length: %s characters", len(output_text))
+        logger.info("Agent steps: %s", len(agent_steps))
+        logger.debug("%s", "=" * 60)
 
         return PlaygroundExecuteResponse(
             output=output_text,
@@ -1358,11 +1364,7 @@ async def execute_playground(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-
-        print("\n❌ 执行出错:")
-        print(traceback.format_exc())
-        print(f"{'=' * 60}\n")
+        logger.exception("Playground execution failed")
 
         return PlaygroundExecuteResponse(
             output=f"执行出错: {str(e)}", status="failed", agentSteps=None
@@ -1399,7 +1401,7 @@ async def get_node_output(flow_id: str, node_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error getting node output: {e}")
+        logger.exception("Error getting node output")
         raise HTTPException(500, f"获取节点输出失败: {str(e)}")
 
 
@@ -1499,8 +1501,8 @@ async def get_env_vars():
 
         with open(env_file, encoding="utf-8") as f:
             return json.load(f)
-    except Exception as e:
-        print(f"Error loading env vars: {e}")
+    except Exception:
+        logger.exception("Error loading env vars")
         return {}
 
 
@@ -1608,8 +1610,8 @@ def _load_session(user_id: str, session_id: str) -> dict | None:
         try:
             with open(path, encoding="utf-8") as f:
                 return json.load(f)
-        except Exception as e:
-            print(f"Error loading session {path}: {e}")
+        except Exception:
+            logger.warning("Error loading session %s", path, exc_info=True)
     return None
 
 
@@ -1775,8 +1777,8 @@ async def list_chat_sessions(
                             message_count=len(data.get("messages", [])),
                         )
                     )
-            except Exception as e:
-                print(f"Error reading session {session_file}: {e}")
+            except Exception:
+                logger.warning("Error reading session %s", session_file, exc_info=True)
 
     # Sort by last_active desc
     sessions.sort(key=lambda x: x.last_active, reverse=True)
@@ -1810,7 +1812,7 @@ async def create_chat_session(
 
         return ChatSessionDetail(**session_data)
     except Exception as e:
-        print(f"Error creating session: {e}")
+        logger.exception("Error creating session")
         raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 
 
@@ -2156,10 +2158,10 @@ async def generate_workflow_advanced(request: WorkflowGenerateRequest):
 
     # 调用工作流生成器
     try:
-        print("🔍 Calling generate_workflow_from_chat with:")
-        print(f"  - user_input: {request.user_input}")
-        print(f"  - session_messages: {session_messages is not None}")
-        print(f"  - enable_optimization: {request.enable_optimization}")
+        logger.info("Calling generate_workflow_from_chat")
+        logger.debug("user_input: %s", request.user_input)
+        logger.debug("session_messages: %s", session_messages is not None)
+        logger.debug("enable_optimization: %s", request.enable_optimization)
 
         result = generate_workflow_from_chat(
             user_input=request.user_input,
@@ -2167,17 +2169,14 @@ async def generate_workflow_advanced(request: WorkflowGenerateRequest):
             enable_optimization=request.enable_optimization,
         )
 
-        print(f"✅ Result returned: {result}")
-        print(f"  - Type: {type(result)}")
+        logger.debug("Result returned: %s", result)
+        logger.debug("Result type: %s", type(result))
         if result:
-            print(f"  - success: {result.success}")
-            print(f"  - visual_pipeline: {result.visual_pipeline is not None}")
+            logger.debug("Result success: %s", result.success)
+            logger.debug("Visual pipeline present: %s", result.visual_pipeline is not None)
 
     except Exception as e:
-        import traceback
-
-        print("❌ Exception in generate_workflow_from_chat:")
-        traceback.print_exc()
+        logger.exception("Exception in generate_workflow_from_chat")
         raise HTTPException(status_code=500, detail=f"工作流生成失败: {str(e)}")
 
     if result is None:
@@ -2186,7 +2185,7 @@ async def generate_workflow_advanced(request: WorkflowGenerateRequest):
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error or "工作流生成失败")
 
-    print("📤 Preparing response...")
+    logger.debug("Preparing response")
     response_data = {
         "success": result.success,
         "visual_pipeline": result.visual_pipeline,
@@ -2195,7 +2194,7 @@ async def generate_workflow_advanced(request: WorkflowGenerateRequest):
         "optimization_metrics": result.optimization_metrics,
         "message": result.message,
     }
-    print(f"✅ Response data prepared: {list(response_data.keys())}")
+    logger.debug("Response data prepared: %s", list(response_data.keys()))
     return response_data
 
 
@@ -2443,7 +2442,10 @@ async def cancel_finetune_task(task_id: str):
     task = finetune_manager.tasks.get(task_id)
     if not task:
         # 任务不在内存中，尝试重新加载
-        print(f"[API] Task {task_id} not found in memory, attempting to reload tasks...")
+        logger.info(
+            "[API] Task %s not found in memory, attempting to reload tasks...",
+            task_id,
+        )
         finetune_manager._load_tasks()
         task = finetune_manager.tasks.get(task_id)
 
@@ -2992,11 +2994,11 @@ async def select_llm_model(request: SelectModelRequest):
         try:
             api_key = _persist_model_selection(request.model_name, request.base_url)
         except Exception as exc:
-            print(f"Failed to persist selected model: {exc}")
+            logger.warning("Failed to persist selected model", exc_info=True)
 
         if api_key:
             os.environ["SAGE_CHAT_API_KEY"] = api_key
-            print(f"Set API key for model {request.model_name}")
+            logger.info("Set API key for model %s", request.model_name)
         else:
             # 如果没有找到特定的 API Key，清除环境变量，以免使用旧的
             if "SAGE_CHAT_API_KEY" in os.environ:
@@ -3022,7 +3024,11 @@ async def select_llm_model(request: SelectModelRequest):
                                 _persist_model_selection(request.model_name, actual_base_url)
                             except Exception:
                                 pass
-                            print(f"Model {request.model_name} already running at port {check_port}")
+                            logger.info(
+                                "Model %s already running at port %s",
+                                request.model_name,
+                                check_port,
+                            )
                             return {
                                 "status": "success",
                                 "message": f"已切换到模型: {request.model_name} (端口 {check_port})",
@@ -3032,7 +3038,7 @@ async def select_llm_model(request: SelectModelRequest):
                     pass
 
             # 本地 Hugging Face 模型，需要通过 sage-llm serve-engine 启动
-            print(f"Detected local model: {request.model_name}, starting engine...")
+            logger.info("Detected local model: %s, starting engine...", request.model_name)
 
             try:
                 # 使用 subprocess 调用 sage-llm serve-engine
@@ -3073,7 +3079,11 @@ async def select_llm_model(request: SelectModelRequest):
                                     _persist_model_selection(request.model_name, actual_engine_base_url)
                                 except Exception:
                                     pass
-                                print(f"Engine for {request.model_name} is ready at port {engine_port}")
+                                logger.info(
+                                    "Engine for %s is ready at port %s",
+                                    request.model_name,
+                                    engine_port,
+                                )
                                 return {
                                     "status": "success",
                                     "message": f"已启动并切换到模型: {request.model_name}",
@@ -3104,7 +3114,7 @@ async def select_llm_model(request: SelectModelRequest):
                             )
 
                             if register_response.status_code == 200:
-                                print(f"Engine {engine_id} registered with Gateway")
+                                logger.info("Engine %s registered with Gateway", engine_id)
                         except Exception:
                             pass
 
@@ -3123,7 +3133,7 @@ async def select_llm_model(request: SelectModelRequest):
                 }
 
             except Exception as e:
-                print(f"Failed to start engine: {e}")
+                logger.exception("Failed to start engine")
                 return {
                     "status": "partial",
                     "message": f"配置已更新，但引擎启动失败: {e}",
@@ -3148,9 +3158,11 @@ async def select_llm_model(request: SelectModelRequest):
                 }
 
                 requests.post(register_url, json=payload, timeout=2)
-                print(f"Registered external model {request.model_name} with Control Plane")
+                logger.info(
+                    "Registered external model %s with Control Plane", request.model_name
+                )
             except Exception as e:
-                print(f"Failed to register model with Control Plane: {e}")
+                logger.warning("Failed to register model with Control Plane", exc_info=True)
 
             return {"status": "success", "message": f"已切换到模型: {request.model_name}"}
 
@@ -3334,8 +3346,8 @@ async def get_llm_status():
                         }
                         available_models.append(model_entry)
                         seen_models[model_key] = model_entry
-        except Exception as e:
-            print(f"Warning: Failed to fetch engines from Gateway: {e}")
+        except Exception:
+            logger.warning("Failed to fetch engines from Gateway", exc_info=True)
 
         # 2. 从配置文件加载模型（去重，避免与 Gateway 引擎重复）
         for model in config_models:
@@ -3397,8 +3409,10 @@ async def get_llm_status():
                 models_data = models_resp.json()
                 model_entries = models_data.get("data") or []
                 return [entry.get("id", "") for entry in model_entries if entry.get("id")]
-            except Exception as exc:
-                print(f"Warning: Failed to fetch model ids from {base_url}: {exc}")
+            except Exception:
+                logger.warning(
+                    "Failed to fetch model ids from %s", base_url, exc_info=True
+                )
                 return []
 
         def evaluate_model(model: dict[str, Any]) -> dict[str, Any]:
@@ -3473,7 +3487,11 @@ async def get_llm_status():
                     status["running"] = True
         else:
             # User explicitly selected a model - keep the env var settings
-            print(f"🎯 Using explicit env model: {explicit_env_model} @ {explicit_env_base_url}")
+            logger.info(
+                "Using explicit env model: %s @ %s",
+                explicit_env_model,
+                explicit_env_base_url,
+            )
 
         status_base_url = status.get("base_url")
         match_found = False

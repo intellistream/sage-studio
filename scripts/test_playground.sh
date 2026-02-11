@@ -138,6 +138,8 @@ echo " 启动说明"
 echo "========================================"
 echo ""
 
+STUDIO_FRONTEND_PORT="${STUDIO_FRONTEND_PORT:-5173}"
+
 echo "使用一键启动脚本:"
 echo "   cd packages/sage-studio"
 echo "   ./start-studio.sh"
@@ -154,7 +156,7 @@ echo "   sage studio npm run dev"
 echo ""
 
 echo "3. 访问应用:"
-echo "   http://localhost:5173"
+echo "   http://localhost:${STUDIO_FRONTEND_PORT}"
 echo ""
 
 echo "4. 使用 Playground:"

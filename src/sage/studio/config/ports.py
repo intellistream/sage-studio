@@ -11,6 +11,8 @@ class StudioPorts:
 
     # Frontend (Vite dev server)
     FRONTEND = 5173
+    FRONTEND_PREVIEW = 4173
+    FRONTEND_DEV_EXTRA = (35180,)
 
     # Backend (FastAPI)
     BACKEND = 8080
@@ -31,6 +33,11 @@ class StudioPorts:
     def get_frontend_port(cls) -> int:
         """获取前端端口"""
         return cls.FRONTEND
+
+    @classmethod
+    def get_frontend_dev_ports(cls) -> list[int]:
+        """获取前端开发相关端口列表"""
+        return [cls.FRONTEND, cls.FRONTEND_PREVIEW, *cls.FRONTEND_DEV_EXTRA]
 
     @classmethod
     def get_backend_port(cls) -> int:

@@ -58,15 +58,15 @@ tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo', '
 ======================================================================
 🎉 Chat 模式就绪！
 ======================================================================
-🎨 Studio 前端: http://0.0.0.0:5173
+🎨 Studio 前端: http://0.0.0.0:${STUDIO_FRONTEND_PORT}
 💬 打开顶部 Chat 标签即可体验
 
 📡 运行中的服务：
-   LLM 引擎       | 端口: 8901  | 日志: ~/.local/state/sage/logs/llm_engine.log
-   Embedding 服务 | 端口: 8090  | 日志: ~/.local/state/sage/logs/embedding.log
-   Gateway        | 端口: 8889  | 日志: ~/.local/state/sage/logs/gateway.log
-   Studio 后端    | 端口: 8080  | 日志: ~/.local/state/sage/logs/studio_backend.log
-   Studio 前端    | 端口: 5173  | 日志: ~/.local/state/sage/logs/studio.log
+   LLM 引擎       | 端口: ${SAGE_LLM_PORT}  | 日志: ~/.local/state/sage/logs/llm_engine.log
+   Embedding 服务 | 端口: ${SAGE_EMBEDDING_PORT}  | 日志: ~/.local/state/sage/logs/embedding.log
+   Gateway        | 端口: ${SAGE_GATEWAY_PORT}  | 日志: ~/.local/state/sage/logs/gateway.log
+   Studio 后端    | 端口: ${STUDIO_BACKEND_PORT}  | 日志: ~/.local/state/sage/logs/studio_backend.log
+   Studio 前端    | 端口: ${STUDIO_FRONTEND_PORT}  | 日志: ~/.local/state/sage/logs/studio.log
 ======================================================================
 ```
 
