@@ -61,7 +61,7 @@ class ChatModeManager(StudioManager):
             List of fine-tuned model info dictionaries
         """
         try:
-            from isage_finetune import finetune_manager
+            from sage_libs.sage_finetune import finetune_manager
 
             models = []
             for task in finetune_manager.tasks.values():
@@ -184,16 +184,16 @@ class ChatModeManager(StudioManager):
             if success:
                 # Update FinetuneManager's current_model for UI display
                 try:
-                    from sage.libs.finetune import finetune_manager
+                    from sage_libs.sage_finetune import finetune_manager
 
                     finetune_manager.current_model = model_path
                     finetune_manager._save_tasks()
                 except Exception as e:
-                    print(f"⚠️  无法更新 FinetuneManager: {e}")
+                    console.print(f"[yellow]Warning: 无法更新 FinetuneManager: {e}[/yellow]")
 
-                print("✅ 模型切换成功！")
-                print(f"   当前模型: {model_path}")
-                print("   Gateway 会自动检测到新模型")
+                console.print("[green]模型切换成功[/green]")
+                console.print(f"   当前模型: {model_path}")
+                console.print("   Gateway 会自动检测到新模型")
 
                 return {
                     "success": True,

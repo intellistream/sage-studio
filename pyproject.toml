@@ -47,6 +47,9 @@ dependencies = [
     # Memory management (independent package)
     "isage-neuromem>=0.2.0", # Memory collection & vector storage (L4)
 
+    # Data management (independent package)
+    "isage-data>=0.1.0", # Dataset management (used by finetune data endpoints)
+
     # Fine-tune dependencies (independent package)
     "isage-finetune>=0.1.0",
 

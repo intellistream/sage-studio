@@ -86,8 +86,8 @@ class WorkflowGenerator:
             WorkflowGenerationResult
         """
         try:
-            from sage.libs.agentic.workflow import GenerationContext
-            from sage.libs.agentic.workflow.generators import (
+            from sage_libs.sage_agentic.workflow import GenerationContext
+            from sage_libs.sage_agentic.workflow.generators import (
                 LLMWorkflowGenerator,
                 RuleBasedWorkflowGenerator,
             )

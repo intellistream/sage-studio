@@ -828,12 +828,6 @@ async def submit_pipeline(
         raise HTTPException(status_code=500, detail=f"提交拓扑图失败: {str(e)}")
 
 
-@app.get("/health")
-async def health_check():
-    """健康检查"""
-    return {"status": "healthy", "service": "SAGE Studio Backend"}
-
-
 # ==================== 管道详情相关端点 ====================
 # 用于支持前端 View Details 功能的占位符端点
 
@@ -1236,7 +1230,7 @@ def _parse_execution_results(results, pipeline, execution_time):
 
         # 生成步骤
         agent_steps.append(
-            AgentStep(
+            PlaygroundAgentStep(
                 step=idx,
                 type="tool_call",
                 content=f"✓ {node.label}",
@@ -1256,7 +1250,7 @@ def _parse_execution_results(results, pipeline, execution_time):
     if output_parts:
         output_text = "\n".join(output_parts)
     else:
-        output_text = f"Pipeline 执行成功！\n\n总耗时: {execution_time:.2f}秒"
+        output_text = f"Pipeline 执行成功.\n\n总耗时: {execution_time:.2f}秒"
 
     return output_text, agent_steps
 
@@ -1270,8 +1264,12 @@ class PlaygroundExecuteRequest(BaseModel):
     stream: bool = False
 
 
-class AgentStep(BaseModel):
-    """Agent 执行步骤"""
+class PlaygroundAgentStep(BaseModel):
+    """Playground 专用的 Agent 执行步骤 (Pydantic model for API serialization).
+
+    Note: This is separate from sage.studio.models.agent_step.AgentStep (dataclass)
+    which is used internally by the agent orchestrator.
+    """
 
     step: int
     type: str  # reasoning, tool_call, response
@@ -1288,7 +1286,7 @@ class PlaygroundExecuteResponse(BaseModel):
 
     output: str
     status: str
-    agentSteps: list[AgentStep] | None = None
+    agentSteps: list[PlaygroundAgentStep] | None = None
 
 
 @app.post("/api/playground/execute", response_model=PlaygroundExecuteResponse)
@@ -1298,23 +1296,16 @@ async def execute_playground(
 ):
     """执行 Playground Flow - 使用增强的 PipelineBuilder"""
     try:
-        import sys
         import time
-
-        # 添加 sage-studio 到 Python 路径
-        studio_root = find_sage_project_root()
-        if studio_root:
-            studio_path = studio_root / "packages" / "sage-studio"
-            if str(studio_path) not in sys.path:
-                sys.path.insert(0, str(studio_path))
 
         from sage.studio.models import PipelineStatus
         from sage.studio.services import get_pipeline_builder
 
-        print(f"\n{'=' * 60}")
-        print("🎯 Playground 执行开始")
-        print(f"   User: {current_user.username}")
-        print(f"   Flow ID: {request.flowId}")
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "Playground execute: user=%s, flow=%s, input=%s",
+            current_user.username, request.flowId, request.input[:80],
+        )
         print(f"   Session: {request.sessionId}")
         print(f"   Input: {request.input[:100]}...")
         print(f"{'=' * 60}\n")
@@ -2547,90 +2538,18 @@ async def prepare_sage_docs(force_refresh: bool = False):
 
 @app.post("/api/finetune/use-as-backend")
 async def use_finetuned_as_backend(request: UseAsBackendRequest):
-    """将微调后的模型设置为 Studio 对话后端"""
-    from sage.libs.finetune import finetune_manager
+    """将微调后的模型设置为 Studio 对话后端
 
-    try:
-        task = finetune_manager.get_task(request.task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
-
-        if task.status != "completed":
-            raise HTTPException(status_code=400, detail="Task is not completed yet")
-
-        # 获取模型路径
-        model_path = Path(task.output_dir)
-        if not model_path.exists():
-            raise HTTPException(status_code=404, detail="Model directory not found")
-
-        # 注册到 vLLM Registry
-        from sage.platform.llm.vllm_registry import vllm_registry
-
-        model_name = f"sage-finetuned-{request.task_id}"
-
-        # 自动检测 GPU 数量和显存
-        try:
-            import torch
-
-            num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
-            # 获取单个 GPU 的显存（以 GB 为单位）
-            if num_gpus > 0:
-                gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-            else:
-                gpu_memory_gb = 0
-        except Exception:
-            num_gpus = 0
-            gpu_memory_gb = 0
-
-        # 根据 GPU 配置模型参数
-        config = {
-            "trust_remote_code": True,
-            "max_model_len": 2048,  # 默认值
-        }
-
-        # 只有当有 GPU 时才设置 GPU 相关参数
-        if num_gpus > 0:
-            # 根据显存大小调整 max_model_len
-            if gpu_memory_gb >= 24:  # 24GB+ (A100, RTX 4090, etc.)
-                config["max_model_len"] = 4096
-                config["gpu_memory_utilization"] = 0.85
-            elif gpu_memory_gb >= 16:  # 16GB+ (V100, RTX 4080, etc.)
-                config["max_model_len"] = 3072
-                config["gpu_memory_utilization"] = 0.8
-            elif gpu_memory_gb >= 8:  # 8GB+ (RTX 3070, etc.)
-                config["max_model_len"] = 2048
-                config["gpu_memory_utilization"] = 0.75
-            else:  # < 8GB
-                config["max_model_len"] = 1024
-                config["gpu_memory_utilization"] = 0.7
-
-            # 如果有多个 GPU 且模型较大，启用张量并行
-            if num_gpus > 1:
-                config["tensor_parallel_size"] = num_gpus
-
-        # 注册模型
-        vllm_registry.register_model(
-            model_name=model_name,
-            model_path=str(model_path),
-            config=config,
-        )
-
-        # 切换到该模型
-        vllm_registry.switch_model(model_name)
-
-        # 更新环境变量（供 RAG pipeline 使用）
-        os.environ["SAGE_STUDIO_LLM_MODEL"] = model_name
-        os.environ["SAGE_STUDIO_LLM_PATH"] = str(model_path)
-
-        return {
-            "status": "success",
-            "message": f"已切换到微调模型: {model_name}",
-            "model_name": model_name,
-            "model_path": str(model_path),
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to switch backend: {e}")
+    NOTE: sage.platform.llm.vllm_registry 已迁移到独立仓库 isagellm。
+    请使用 'sage llm engine start <model_path>' 或 '/api/finetune/switch-model' 端点。
+    """
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "此端点已弃用。vLLM registry 已迁移到独立包 isagellm。"
+            "请使用 POST /api/finetune/switch-model 或命令 'sage llm engine start' 部署模型。"
+        ),
+    )
 
 
 @app.get("/api/system/gpu-info")
