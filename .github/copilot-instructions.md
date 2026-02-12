@@ -362,6 +362,14 @@ If `sage-pypi-publisher` fails:
 
 ## 🚫 Critical Rules
 
+### NO Summary Documents After Task Completion
+
+**CRITICAL**: Do NOT create summary, recap, or documentation files after completing tasks unless explicitly requested.
+- ❌ NO "work_summary.md", "changes_summary.md", or similar
+- ❌ NO "completion reports" or status documents
+- ✅ DO provide brief inline messages in the conversation
+- ✅ DO use commit messages for documentation (git history is your record)
+
 ### NO Backward Compatibility Code
 
 **❌ NEVER create backward compatibility layers:**
