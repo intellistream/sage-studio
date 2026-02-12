@@ -143,46 +143,70 @@ When `sage studio start` completes successfully, it displays a unified status su
 
 **Implementation**: See `ChatModeManager.start()` in [src/sage/studio/chat_manager.py](src/sage/studio/chat_manager.py)
 
-## 📦 PyPI Publishing
+## 📦 PyPI Publishing - CRITICAL: Manual One-by-One
 
-**All packages MUST be published via `sage-pypi-publisher`:**
+**🚨 CRITICAL: NEVER use bash scripts for publishing. ALWAYS use sage-pypi-publisher CLI tool directly.**
 
-### Publishing Workflow
+### Publishing Workflow (Manual, One-by-One)
 
 1. **Update Version** (4-digit semantic versioning: `MAJOR.MINOR.PATCH.BUILD`):
    ```bash
-   # Edit pyproject.toml and src/sage/studio/_version.py
+   # Edit src/sage/studio/_version.py
    # Example: 0.2.0.1 → 0.2.0.2
    ```
 
-2. **Publish to TestPyPI** (testing):
+2. **Commit and tag changes**:
    ```bash
-   cd /path/to/sage-pypi-publisher
-   ./publish.sh sage-studio --test-pypi --auto-bump patch
+   git commit -m "chore: bump version to X.Y.Z.W"
+   git tag -a vX.Y.Z.W -m "Release sage-studio X.Y.Z.W"
+   git push origin vX.Y.Z.W
    ```
 
-3. **Publish to PyPI** (production):
+3. **Test on TestPyPI** (publish manually, one-by-one):
    ```bash
-   ./publish.sh sage-studio --auto-bump patch --no-dry-run
+   cd /path/to/sage-studio
+   sage-pypi-publisher build . --upload -r testpypi --no-dry-run
+
+   # Verify
+   pip install -i https://test.pypi.org/simple/ isage-studio==X.Y.Z.W --dry-run
    ```
+
+4. **Publish to Production PyPI** (same command, change to pypi):
+   ```bash
+   cd /path/to/sage-studio
+   sage-pypi-publisher build . --upload -r pypi --no-dry-run
+   ```
+
+### Key Commands
+
+```bash
+# ✅ CORRECT: Manual one-by-one using sage-pypi-publisher
+cd /path/to/sage-studio && sage-pypi-publisher build . --upload -r testpypi --no-dry-run
+
+# ❌ WRONG: Using ./publish.sh from sage-pypi-publisher
+# ./publish.sh sage-studio  # Use CLI directly instead
+
+# ❌ WRONG: Using bash scripts or loops
+# for pkg in ...; do sage-pypi-publisher ...; done
+```
 
 ### Dependencies Publishing
 
 **CRITICAL**: When updating `isage-agentic` or `isage-sias`, publish them FIRST:
 
 ```bash
-# 1. Publish sage-agentic
+# 1. Publish sage-agentic (in sage-agentic repo)
 cd /path/to/sage-agentic
-sage-pypi-publisher build . --upload --no-dry-run
+sage-pypi-publisher build . --upload -r testpypi --no-dry-run
+sage-pypi-publisher build . --upload -r pypi --no-dry-run
 
-# 2. Publish sage-sias
+# 2. Publish sage-sias (in sage-sias repo)
 cd /path/to/sage-sias
-sage-pypi-publisher build . --upload --no-dry-run
+sage-pypi-publisher build . --upload -r testpypi --no-dry-run
+sage-pypi-publisher build . --upload -r pypi --no-dry-run
 
 # 3. Update Studio's pyproject.toml if needed
-# Then publish Studio
-cd /path/to/sage-studio
-./quickstart.sh  # Reinstall with new dependencies
+# Then publish Studio (see above)
 ```
 
 ## 🧪 Testing
