@@ -165,7 +165,7 @@ When `sage studio start` completes successfully, it displays a unified status su
 3. **Test on TestPyPI** (publish manually, one-by-one):
    ```bash
    cd /path/to/sage-studio
-   sage-pypi-publisher build . --upload -r testpypi --no-dry-run
+   sage-pypi-publisher publish . -r testpypi --no-dry-run
 
    # Verify
    pip install -i https://test.pypi.org/simple/ isage-studio==X.Y.Z.W --dry-run
@@ -174,14 +174,14 @@ When `sage studio start` completes successfully, it displays a unified status su
 4. **Publish to Production PyPI** (same command, change to pypi):
    ```bash
    cd /path/to/sage-studio
-   sage-pypi-publisher build . --upload -r pypi --no-dry-run
+   sage-pypi-publisher publish . -r pypi --no-dry-run
    ```
 
 ### Key Commands
 
 ```bash
-# ✅ CORRECT: Manual one-by-one using sage-pypi-publisher
-cd /path/to/sage-studio && sage-pypi-publisher build . --upload -r testpypi --no-dry-run
+# ✅ CORRECT: Manual one-by-one using publish command (一步完成)
+cd /path/to/sage-studio && sage-pypi-publisher publish . -r testpypi --no-dry-run
 
 # ❌ WRONG: Using ./publish.sh from sage-pypi-publisher
 # ./publish.sh sage-studio  # Use CLI directly instead
@@ -197,13 +197,13 @@ cd /path/to/sage-studio && sage-pypi-publisher build . --upload -r testpypi --no
 ```bash
 # 1. Publish sage-agentic (in sage-agentic repo)
 cd /path/to/sage-agentic
-sage-pypi-publisher build . --upload -r testpypi --no-dry-run
-sage-pypi-publisher build . --upload -r pypi --no-dry-run
+sage-pypi-publisher publish . -r testpypi --no-dry-run
+sage-pypi-publisher publish . -r pypi --no-dry-run
 
 # 2. Publish sage-sias (in sage-sias repo)
 cd /path/to/sage-sias
-sage-pypi-publisher build . --upload -r testpypi --no-dry-run
-sage-pypi-publisher build . --upload -r pypi --no-dry-run
+sage-pypi-publisher publish . -r testpypi --no-dry-run
+sage-pypi-publisher publish . -r pypi --no-dry-run
 
 # 3. Update Studio's pyproject.toml if needed
 # Then publish Studio (see above)
