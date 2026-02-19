@@ -1,5 +1,11 @@
 # SAGE Studio Copilot Instructions
 
+## 🚨 Runtime Direction (Cross-Repo)
+
+- `sageFlownet` is the runtime component that replaces `Ray` in the SAGE ecosystem.
+- Studio backend/runtime integration guidance should align with Flownet-oriented scheduling/runtime usage.
+- Do NOT add new `ray` imports/dependencies.
+
 ## 📋 Project Overview
 
 **SAGE Studio** is a modern low-code web UI for visually developing and managing SAGE data pipelines.
