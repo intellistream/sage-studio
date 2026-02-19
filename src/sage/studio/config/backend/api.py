@@ -839,7 +839,7 @@ async def submit_pipeline(
 # 用于支持前端 View Details 功能的占位符端点
 
 # 全局状态存储（生产环境应使用数据库）
-job_runtime_status = {}  # {job_id: {status, use_ray, isRunning, ...}}
+job_runtime_status = {}  # {job_id: {status, use_flownet, isRunning, ...}}
 job_logs = {}  # {job_id: [log_lines]}
 job_configs_cache = {}  # {pipeline_id: yaml_config}
 user_queries = {}  # {job_id: [(query, answer), ...]}
@@ -940,7 +940,7 @@ async def get_job_status(job_id: str):
             {
                 "job_id": job_id,
                 "status": "idle",
-                "use_ray": False,
+                "use_flownet": True,
                 "isRunning": False,
             },
         )
@@ -958,7 +958,7 @@ async def start_job(job_id: str):
         job_runtime_status[job_id] = {
             "job_id": job_id,
             "status": "running",
-            "use_ray": False,
+            "use_flownet": True,
             "isRunning": True,
         }
 
@@ -982,7 +982,7 @@ async def stop_job(job_id: str, duration: str):
         job_runtime_status[job_id] = {
             "job_id": job_id,
             "status": "stopped",
-            "use_ray": False,
+            "use_flownet": True,
             "isRunning": False,
         }
 
