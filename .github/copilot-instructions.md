@@ -1,18 +1,5 @@
 # SAGE Studio Copilot Instructions
 
-## 🚨 Runtime Direction (Cross-Repo)
-
-- `sageFlownet` is the runtime component that replaces `Ray` in the SAGE ecosystem.
-- Studio backend/runtime integration guidance should align with Flownet-oriented scheduling/runtime usage.
-- Do NOT add new `ray` imports/dependencies.
-
-## 🚨 Installation Consistency (Cross-Repo)
-
-- 在 conda 环境中，**必须**使用 `python -m pip`，不要直接使用 `pip`。
-- 当 Studio 依赖 SAGE 主仓库能力时，先在 `SAGE/` 执行 `./quickstart.sh --dev --yes`。
-- SAGE quickstart 已负责安装核心独立 PyPI 依赖（如 `isagellm`、`isage-flownet`、`isage-vdb` 等），不要再建议通过 extras 手动补装核心依赖。
-- `git push` 前必须确认本仓库 `pre-push` hooks 行为；部分仓库会在 push 时自动更新版本号并触发 PyPI/TestPyPI 发布。
-
 ## 📋 Project Overview
 
 **SAGE Studio** is a modern low-code web UI for visually developing and managing SAGE data pipelines.
@@ -98,7 +85,7 @@ cd sage-studio
 ./quickstart.sh
 
 # Method 2: Manual install
-python -m pip install -e .
+pip install -e .
 ```
 
 **Dependencies Installation**:
@@ -156,70 +143,46 @@ When `sage studio start` completes successfully, it displays a unified status su
 
 **Implementation**: See `ChatModeManager.start()` in [src/sage/studio/chat_manager.py](src/sage/studio/chat_manager.py)
 
-## 📦 PyPI Publishing - CRITICAL: Manual One-by-One
+## 📦 PyPI Publishing
 
-**🚨 CRITICAL: NEVER use bash scripts for publishing. ALWAYS use sage-pypi-publisher CLI tool directly.**
+**All packages MUST be published via `sage-pypi-publisher`:**
 
-### Publishing Workflow (Manual, One-by-One)
+### Publishing Workflow
 
 1. **Update Version** (4-digit semantic versioning: `MAJOR.MINOR.PATCH.BUILD`):
    ```bash
-   # Edit src/sage/studio/_version.py
+   # Edit pyproject.toml and src/sage/studio/_version.py
    # Example: 0.2.0.1 → 0.2.0.2
    ```
 
-2. **Commit and tag changes**:
+2. **Publish to TestPyPI** (testing):
    ```bash
-   git commit -m "chore: bump version to X.Y.Z.W"
-   git tag -a vX.Y.Z.W -m "Release sage-studio X.Y.Z.W"
-   git push origin vX.Y.Z.W
+   cd /path/to/sage-pypi-publisher
+   ./publish.sh sage-studio --test-pypi --auto-bump patch
    ```
 
-3. **Test on TestPyPI** (publish manually, one-by-one):
+3. **Publish to PyPI** (production):
    ```bash
-   cd /path/to/sage-studio
-   sage-pypi-publisher publish . -r testpypi --no-dry-run
-
-   # Verify
-   pip install -i https://test.pypi.org/simple/ isage-studio==X.Y.Z.W --dry-run
+   ./publish.sh sage-studio --auto-bump patch --no-dry-run
    ```
-
-4. **Publish to Production PyPI** (same command, change to pypi):
-   ```bash
-   cd /path/to/sage-studio
-   sage-pypi-publisher publish . -r pypi --no-dry-run
-   ```
-
-### Key Commands
-
-```bash
-# ✅ CORRECT: Manual one-by-one using publish command (一步完成)
-cd /path/to/sage-studio && sage-pypi-publisher publish . -r testpypi --no-dry-run
-
-# ❌ WRONG: Using ./publish.sh from sage-pypi-publisher
-# ./publish.sh sage-studio  # Use CLI directly instead
-
-# ❌ WRONG: Using bash scripts or loops
-# for pkg in ...; do sage-pypi-publisher ...; done
-```
 
 ### Dependencies Publishing
 
 **CRITICAL**: When updating `isage-agentic` or `isage-sias`, publish them FIRST:
 
 ```bash
-# 1. Publish sage-agentic (in sage-agentic repo)
+# 1. Publish sage-agentic
 cd /path/to/sage-agentic
-sage-pypi-publisher publish . -r testpypi --no-dry-run
-sage-pypi-publisher publish . -r pypi --no-dry-run
+sage-pypi-publisher build . --upload --no-dry-run
 
-# 2. Publish sage-sias (in sage-sias repo)
+# 2. Publish sage-sias
 cd /path/to/sage-sias
-sage-pypi-publisher publish . -r testpypi --no-dry-run
-sage-pypi-publisher publish . -r pypi --no-dry-run
+sage-pypi-publisher build . --upload --no-dry-run
 
 # 3. Update Studio's pyproject.toml if needed
-# Then publish Studio (see above)
+# Then publish Studio
+cd /path/to/sage-studio
+./quickstart.sh  # Reinstall with new dependencies
 ```
 
 ## 🧪 Testing
@@ -374,14 +337,6 @@ If `sage-pypi-publisher` fails:
 5. **Version bumps**: Follow 4-digit semver (X.Y.Z.BUILD)
 
 ## 🚫 Critical Rules
-
-### NO Summary Documents After Task Completion
-
-**CRITICAL**: Do NOT create summary, recap, or documentation files after completing tasks unless explicitly requested.
-- ❌ NO "work_summary.md", "changes_summary.md", or similar
-- ❌ NO "completion reports" or status documents
-- ✅ DO provide brief inline messages in the conversation
-- ✅ DO use commit messages for documentation (git history is your record)
 
 ### NO Backward Compatibility Code
 

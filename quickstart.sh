@@ -67,58 +67,20 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${YELLOW}${BOLD}Step 2: Installing SAGE Studio${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-# Detect development mode (check if dependency repos exist locally)
-PARENT_DIR="$(dirname "$PROJECT_ROOT")"
-DEV_MODE=false
-
-echo -e "${BLUE}Checking for local development repositories...${NC}"
-
-# Check for common dependency repos
-if [ -d "$PARENT_DIR/sage-agentic/src" ] || [ -d "$PARENT_DIR/sage-sias" ] || [ -d "$PARENT_DIR/SAGE/packages" ]; then
-    DEV_MODE=true
-    echo -e "${YELLOW}✓ Found local development repositories${NC}"
-    echo -e "${YELLOW}  Using development mode (pip install -e)${NC}"
-else
-    echo -e "${BLUE}  No local repos found, using PyPI packages${NC}"
-fi
-
+echo -e "${BLUE}Installing sage-studio (editable) and all dependencies from PyPI...${NC}"
 echo ""
 
-# Install dependencies
-if [ "$DEV_MODE" = true ]; then
-    echo -e "${BLUE}Installing in development mode...${NC}"
+# Uninstall any SAGE core packages that may have been installed as local editable
+# installs (e.g. from SAGE/quickstart.sh --dev). We need PyPI versions here.
+echo -e "${YELLOW}⚠ Removing any local editable SAGE installs (will reinstall from PyPI)...${NC}"
+pip uninstall -y isage isage-common isage-platform isage-kernel isage-libs \
+    isage-middleware isage-cli isage-tools 2>/dev/null || true
+echo -e "${GREEN}✓ Cleared local SAGE editable installs${NC}"
+echo ""
 
-    # Install sage-agentic if available
-    if [ -d "$PARENT_DIR/sage-agentic" ]; then
-        echo -e "${CYAN}  → Installing sage-agentic from local source${NC}"
-        pip install -e "$PARENT_DIR/sage-agentic"
-    fi
-
-    # Install sage-sias if available
-    if [ -d "$PARENT_DIR/sage-sias" ]; then
-        echo -e "${CYAN}  → Installing sage-sias from local source${NC}"
-        pip install -e "$PARENT_DIR/sage-sias"
-    fi
-
-    # Install SAGE if available (dev mode only installs packages, no build)
-    if [ -d "$PARENT_DIR/SAGE/packages" ]; then
-        echo -e "${CYAN}  → Installing SAGE packages from local source${NC}"
-        # Install core SAGE packages directly without running quickstart
-        for pkg in sage-common sage-platform sage-kernel sage-libs sage-middleware; do
-            if [ -d "$PARENT_DIR/SAGE/packages/$pkg" ]; then
-                echo -e "${BLUE}    Installing $pkg...${NC}"
-                pip install -e "$PARENT_DIR/SAGE/packages/$pkg" --no-deps 2>/dev/null || echo -e "${YELLOW}    ⚠ $pkg not found, skipping${NC}"
-            fi
-        done
-    fi
-
-    # Install studio itself in dev mode
-    echo -e "${CYAN}  → Installing sage-studio in development mode${NC}"
-    pip install -e "$PROJECT_ROOT"
-else
-    echo -e "${BLUE}Installing from PyPI...${NC}"
-    pip install -e "$PROJECT_ROOT"
-fi
+# Install studio itself in editable mode; all other dependencies (isage, isagellm,
+# isage-agentic, etc.) are resolved from PyPI as declared in pyproject.toml.
+pip install -e "$PROJECT_ROOT"
 
 echo -e "${GREEN}✓ SAGE Studio installed${NC}"
 echo ""
