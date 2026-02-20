@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +14,7 @@ from sage.studio.api.auth import build_auth_router
 from sage.studio.api.canvas import build_canvas_router
 from sage.studio.api.chat import build_chat_router
 from sage.studio.api.endpoints import build_endpoint_router
+from sage.studio.api.llm import build_llm_router
 from sage.studio.api.sessions import build_sessions_router
 from sage.studio.config.ports import StudioPorts
 from sage.studio.runtime.endpoints import bootstrap_dashscope_endpoint_from_env
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(build_chat_router())
     app.include_router(build_endpoint_router())
     app.include_router(build_canvas_router())
+    app.include_router(build_llm_router())
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -84,8 +86,10 @@ def _mount_frontend_dist(app: FastAPI) -> None:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str) -> FileResponse:
-        if full_path.startswith("api/") or full_path.startswith("health"):
-            return FileResponse(index_file)
+        # Return 404 for API routes that weren't matched by any registered handler
+        # so the frontend receives a proper error instead of an HTML SPA response.
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail=f"Not found: /{full_path}")
         candidate = dist_dir / full_path
         if candidate.exists() and candidate.is_file():
             return FileResponse(candidate)

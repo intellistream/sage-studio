@@ -1145,8 +1145,11 @@ function mapLegacyStatus(legacyStatus: string): AgentStepStatus {
  */
 export async function getChatSessions(): Promise<ChatSessionSummary[]> {
     const response = await apiClient.get('/chat/sessions')
-    // Gateway 返回 {sessions: [...], stats: {...}}
-    return response.data.sessions || response.data
+    // Backend returns plain array []; Gateway returns {sessions: [...], stats: {...}}
+    const data = response.data
+    if (Array.isArray(data)) return data
+    if (Array.isArray(data?.sessions)) return data.sessions
+    return []
 }
 
 export async function createChatSession(title?: string): Promise<ChatSessionDetail> {

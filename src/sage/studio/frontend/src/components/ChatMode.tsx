@@ -617,6 +617,10 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     }
 
     const loadSessionMessages = async (sessionId: string) => {
+        if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+            console.warn('[ChatMode] loadSessionMessages called with invalid sessionId:', sessionId)
+            return
+        }
         try {
             const detail = await getChatSessionDetail(sessionId)
 
