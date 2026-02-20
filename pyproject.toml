@@ -36,6 +36,9 @@ dependencies = [
     # SAGE meta package (includes all core packages)
     "isage>=0.2.0",
 
+    # Flownet runtime (distributed dataflow execution, replaces Ray)
+    "isage-flownet>=0.1.1",
+
     # sageLLM - IntelliStream自研推理引擎（包含Gateway、Control Plane、Backend等完整推理能力）
     "isagellm>=0.1.0",
 

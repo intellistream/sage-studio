@@ -53,3 +53,4 @@ Thumbs.db
 backend.log
 frontend.log
 src/sage/studio/config/backend/.mypy_cache/*
+.sage/*

@@ -81,6 +81,9 @@
 		},
 		{
 			"path": "../sage-libs-intent"
+		},
+		{
+			"path": "../sageFlownet"
 		}
 	],
 	"settings": {
