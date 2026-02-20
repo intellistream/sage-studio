@@ -33,11 +33,8 @@ classifiers = [
 
 # Core dependencies
 dependencies = [
-    # SAGE CLI (provides 'sage' command with plugin support)
-    "isage-cli>=0.2.4.13",
-
-    # SAGE meta package (includes all core packages)
-    "isage>=0.2.4.15",
+    # SAGE meta package (includes all core packages, and isage-cli transitively)
+    "isage>=0.2.4.17",
 
     # Flownet runtime (distributed dataflow execution, replaces Ray)
     "isage-flownet>=0.1.1",
