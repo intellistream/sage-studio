@@ -33,28 +33,31 @@ classifiers = [
 
 # Core dependencies
 dependencies = [
+    # SAGE CLI (provides 'sage' command with plugin support)
+    "isage-cli>=0.2.4.12",
+
     # SAGE meta package (includes all core packages)
-    "isage>=0.2.0",
+    "isage>=0.2.4.15",
 
     # Flownet runtime (distributed dataflow execution, replaces Ray)
     "isage-flownet>=0.1.1",
 
     # sageLLM - IntelliStream自研推理引擎（包含Gateway、Control Plane、Backend等完整推理能力）
-    "isagellm>=0.1.0",
+    "isagellm>=0.5.1.3",
 
     # Agentic dependencies (independent packages)
-    "isage-agentic>=0.1.0",
+    "isage-agentic>=0.1.0.2",
     "isage-sias>=0.1.0",
-    "isage-libs-intent>=0.1.0", # Intent recognition (L3)
+    "isage-libs-intent>=0.1.0.3", # Intent recognition (L3)
 
     # Memory management (independent package)
-    "isage-neuromem>=0.2.0", # Memory collection & vector storage (L4)
+    "isage-neuromem>=0.2.1.4", # Memory collection & vector storage (L4)
 
     # Data management (independent package)
-    "isage-data>=0.1.0", # Dataset management (used by finetune data endpoints)
+    "isage-data>=0.2.3.2", # Dataset management (used by finetune data endpoints)
 
     # Fine-tune dependencies (independent package)
-    "isage-finetune>=0.1.0",
+    "isage-finetune>=0.1.0.4",
 
     # Backend API dependencies
     "pydantic[email]>=2.10.0,<3.0.0",
@@ -81,7 +84,7 @@ dependencies = [
     "packaging>=24.0,<26.0",  # 兼容 streamlit 1.48.0 等老版本
 
     # SAGE middleware integration
-    "isage-middleware>=0.2.0",
+    "isage-middleware>=0.2.4.13",
 ]
 
 license = { text = "MIT" }
