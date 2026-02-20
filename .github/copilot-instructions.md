@@ -354,6 +354,18 @@ If `sage-pypi-publisher` fails:
 
 **Rationale**: Backward compatibility code creates technical debt, hides real issues, and makes debugging harder. Fix problems once, fix them right.
 
+### NO New Virtual Environments
+
+**❌ NEVER create new virtual environments in this repository:**
+- DO NOT create `.venv/`, `venv/`, or virtualenv/conda environments inside `sage-studio/`
+- DO NOT run environment bootstrap commands that create a new interpreter environment by default
+
+**✅ ALWAYS use existing environments:**
+- Use the currently active Python environment (for this workspace, prefer the existing `sage` conda env)
+- If dependencies are needed, install/update packages in the active environment following repository policy
+
+**Rationale**: Creating extra local environments causes version drift and inconsistent debugging behavior across repos.
+
 ---
 
 **Last Updated**: 2026-01-26
