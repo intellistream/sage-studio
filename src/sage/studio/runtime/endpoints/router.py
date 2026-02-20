@@ -13,6 +13,7 @@ class ResolvedEndpoint:
     provider: str
     base_url: str
     model_id: str
+    matched_model: bool
     api_key: str | None
     extra_headers: tuple[tuple[str, str], ...]
 
@@ -38,6 +39,7 @@ def resolve_endpoint_for_model(model_id: str) -> ResolvedEndpoint | None:
         provider=endpoint.provider.value,
         base_url=endpoint.base_url,
         model_id=normalized_model,
+        matched_model=normalized_model in endpoint.model_ids,
         api_key=decrypted_key,
         extra_headers=endpoint.extra_headers,
     )

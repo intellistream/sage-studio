@@ -197,6 +197,8 @@ def _generate_response_text(*, message: str, turn_count: int, resolved: Resolved
 def _supports_live_inference(resolved: ResolvedEndpoint) -> bool:
     if not resolved.api_key:
         return False
+    if not resolved.matched_model:
+        return False
     return resolved.provider in {"alibaba_dashscope", "openai_compatible", "openrouter", "groq", "openai"}
 
 

@@ -115,6 +115,63 @@ class StudioManager:
         except Exception as e:
             console.print(f"[red]保存配置失败: {e}[/red]")
 
+    def _get_listener_pid_on_port(self, port: int) -> int | None:
+        """获取监听指定端口的进程 PID。"""
+        try:
+            for conn in psutil.net_connections(kind="inet"):
+                if not hasattr(conn, "laddr") or not conn.laddr:
+                    continue
+                if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN and conn.pid:
+                    return conn.pid
+        except Exception:
+            return None
+        return None
+
+    def _is_frontend_process(self, pid: int) -> bool:
+        """判断 PID 是否属于 Studio 前端进程。"""
+        try:
+            proc = psutil.Process(pid)
+            cmdline = " ".join(proc.cmdline()).lower()
+            name = proc.name().lower()
+            cwd = ""
+            try:
+                cwd = proc.cwd()
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                cwd = ""
+
+            frontend_dir = str(self.frontend_dir)
+            if cwd and Path(cwd) == self.frontend_dir:
+                return True
+
+            frontend_markers = (
+                "npm run dev",
+                "npm run preview",
+                "vite",
+                "spa_server.py",
+            )
+            if any(marker in cmdline for marker in frontend_markers):
+                if "studio" in cmdline or (cwd and frontend_dir in cwd):
+                    return True
+
+            if name in {"npm", "node"} and (cwd and frontend_dir in cwd):
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+        return False
+
+    def _is_gateway_process(self, pid: int) -> bool:
+        """判断 PID 是否属于 SAGE Gateway 进程。"""
+        try:
+            proc = psutil.Process(pid)
+            cmdline = " ".join(proc.cmdline()).lower()
+            return (
+                "sagellm-gateway" in cmdline
+                or "sagellm_gateway" in cmdline
+                or "sage.llm.gateway" in cmdline
+            )
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
     def is_running(self) -> int | None:
         """检查 Studio 前端是否运行中
 
@@ -129,7 +186,7 @@ class StudioManager:
                 with open(self.pid_file) as f:
                     pid = int(f.read().strip())
 
-                if psutil.pid_exists(pid):
+                if psutil.pid_exists(pid) and self._is_frontend_process(pid):
                     return pid
                 else:
                     # PID 文件存在但进程不存在，清理文件
@@ -141,10 +198,20 @@ class StudioManager:
         config = self.load_config()
         port = config.get("port", self.default_port)
         try:
-            response = requests.get(f"http://localhost:{port}/", timeout=1)
+            response = requests.get(
+                f"http://localhost:{port}/",
+                timeout=1,
+                proxies={"http": None, "https": None},
+            )
             # Vite dev server 或 preview server 会返回 HTML
             if response.status_code == 200:
-                return -1  # 运行中但无 PID 文件
+                listener_pid = self._get_listener_pid_on_port(port)
+                if listener_pid and self._is_frontend_process(listener_pid):
+                    return listener_pid
+
+                body = response.text[:2048].lower()
+                if "<title>sage studio" in body:
+                    return -1  # 运行中但无 PID 文件
         except Exception:
             pass
 
@@ -234,7 +301,7 @@ class StudioManager:
                 with open(self.gateway_pid_file) as f:
                     pid = int(f.read().strip())
 
-                if psutil.pid_exists(pid):
+                if psutil.pid_exists(pid) and self._is_gateway_process(pid):
                     return pid
 
                 # PID 文件存在但进程不存在，清理文件
@@ -251,6 +318,10 @@ class StudioManager:
             )
             if response.status_code == 200:
                 # Gateway 在运行但没有 PID 文件，尝试找到进程
+                listener_pid = self._get_listener_pid_on_port(self.gateway_port)
+                if listener_pid and self._is_gateway_process(listener_pid):
+                    return listener_pid
+
                 for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                     try:
                         cmdline = " ".join(proc.cmdline())
@@ -277,6 +348,25 @@ class StudioManager:
             else:
                 console.print(f"[green]✅ Gateway 已在运行中 (PID: {existing_pid})[/green]")
             return True
+
+        # 并发启动保护：端口已占用时先短暂等待，避免误判 "Address already in use"
+        if self._is_port_in_use(port):
+            console.print(f"[yellow]⚠️  Gateway 端口 {port} 已被占用，正在确认是否已有实例启动...[/yellow]")
+            for _ in range(10):
+                time.sleep(0.5)
+                existing_pid = self.is_gateway_running()
+                if existing_pid:
+                    if existing_pid == -1:
+                        console.print("[green]✅ 检测到 Gateway 已由其他进程启动[/green]")
+                    else:
+                        console.print(f"[green]✅ 检测到 Gateway 已由其他进程启动 (PID: {existing_pid})[/green]")
+                    return True
+
+            console.print(
+                f"[red]❌ 端口 {port} 被占用，但未探测到可用 Gateway 健康检查[/red]"
+            )
+            console.print("[yellow]   请检查占用进程或设置 SAGE_GATEWAY_PORT 后重试[/yellow]")
+            return False
 
         console.print(f"[blue]🚀 启动 Gateway 服务 ({host}:{port})...[/blue]")
 
@@ -310,6 +400,14 @@ class StudioManager:
                     console.print(f"[green]✅ Gateway 启动成功 (PID: {process.pid})[/green]")
                     console.print(f"   日志: {self.gateway_log_file}")
                     return True
+
+                # 并发场景：当前进程退出，但端口上已有其他 Gateway 实例
+                if process.poll() is not None:
+                    existing_pid = self.is_gateway_running()
+                    if existing_pid:
+                        console.print("[green]✅ Gateway 已由并发启动的其他进程成功接管[/green]")
+                        return True
+                    break
 
             console.print("[yellow]⚠️  Gateway 启动命令执行成功，但未能在10秒内探测到服务[/yellow]")
             console.print(f"   请检查日志: {self.gateway_log_file}")

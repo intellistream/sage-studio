@@ -30,7 +30,23 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
+# Always bind installs to current Python interpreter
+PYTHON_CMD="${PYTHON_CMD:-python}"
+PIP_CMD="${PIP_CMD:-$PYTHON_CMD -m pip}"
+
+if ! command -v "$PYTHON_CMD" >/dev/null 2>&1; then
+    echo -e "${RED}✗ Python interpreter not found: $PYTHON_CMD${NC}"
+    exit 1
+fi
+
+PYTHON_EXECUTABLE="$("$PYTHON_CMD" -c 'import sys; print(sys.executable)' 2>/dev/null || true)"
+if [ -z "$PYTHON_EXECUTABLE" ]; then
+    echo -e "${RED}✗ Failed to resolve Python executable from: $PYTHON_CMD${NC}"
+    exit 1
+fi
+
 echo -e "${BLUE}📂 Project root: ${NC}$PROJECT_ROOT"
+echo -e "${BLUE}🐍 Python: ${NC}$PYTHON_EXECUTABLE"
 echo ""
 
 # Step 1: Install git hooks
@@ -73,14 +89,14 @@ echo ""
 # Uninstall any SAGE core packages that may have been installed as local editable
 # installs (e.g. from SAGE/quickstart.sh --dev). We need PyPI versions here.
 echo -e "${YELLOW}⚠ Removing any local editable SAGE installs (will reinstall from PyPI)...${NC}"
-pip uninstall -y isage isage-common isage-platform isage-kernel isage-libs \
+$PIP_CMD uninstall -y isage isage-common isage-platform isage-kernel isage-libs \
     isage-middleware isage-cli isage-tools 2>/dev/null || true
 echo -e "${GREEN}✓ Cleared local SAGE editable installs${NC}"
 echo ""
 
 # Install studio itself in editable mode; all other dependencies (isage, isagellm,
 # isage-agentic, etc.) are resolved from PyPI as declared in pyproject.toml.
-pip install -e "$PROJECT_ROOT"
+$PIP_CMD install -e "$PROJECT_ROOT"
 
 echo -e "${GREEN}✓ SAGE Studio installed${NC}"
 echo ""
@@ -91,21 +107,21 @@ echo -e "${YELLOW}${BOLD}Step 3: Verifying Installation${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
 # Fix namespace package issue (remove blocking __init__.py if exists)
-SAGE_NAMESPACE_INIT="$(python -c 'import site; import os; print(os.path.join(site.getsitepackages()[0], "sage", "__init__.py"))' 2>/dev/null)"
+SAGE_NAMESPACE_INIT="$("$PYTHON_CMD" -c 'import site; import os; print(os.path.join(site.getsitepackages()[0], "sage", "__init__.py"))' 2>/dev/null)"
 if [ -f "$SAGE_NAMESPACE_INIT" ] && [ ! -s "$SAGE_NAMESPACE_INIT" ]; then
     echo -e "${YELLOW}⚠ Fixing namespace package issue...${NC}"
     rm -f "$SAGE_NAMESPACE_INIT"
     echo -e "${GREEN}✓ Namespace package fixed${NC}"
 fi
 
-if python -c "from sage.studio.studio_manager import StudioManager; print('✓ SAGE Studio installed successfully')" 2>/dev/null; then
+if "$PYTHON_CMD" -c "from sage.studio.studio_manager import StudioManager; print('✓ SAGE Studio installed successfully')" 2>/dev/null; then
     echo -e "${GREEN}✓ Installation verified${NC}"
 else
     echo -e "${RED}✗ Installation verification failed${NC}"
     echo -e "${YELLOW}Troubleshooting:${NC}"
-    echo -e "  1. Check if SAGE core packages are installed: pip list | grep isage"
-    echo -e "  2. Try reinstalling: pip install -e ."
-    echo -e "  3. Check Python can import sage: python -c 'import sage'"
+    echo -e "  1. Check if SAGE core packages are installed: $PIP_CMD list | grep isage"
+    echo -e "  2. Try reinstalling: $PIP_CMD install -e ."
+    echo -e "  3. Check Python can import sage: $PYTHON_CMD -c 'import sage'"
     exit 1
 fi
 

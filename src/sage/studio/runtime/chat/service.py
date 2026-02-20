@@ -800,6 +800,7 @@ def submit_chat_service_request(
     )
     dispatcher = _ensure_chat_dispatcher(run)
     runtime_request_id = _new_runtime_request_id(run)
+    _ensure_request_started(run, runtime_request_id)
     dispatcher.bind_request(
         runtime_request_id=runtime_request_id,
         logical_request_id=request_id,
@@ -817,12 +818,25 @@ def submit_chat_service_request(
             ordered_event_backpressure=ordered_event_backpressure,
         )
         _ = _ensure_chat_dispatcher(run)
+        _ensure_request_started(run, runtime_request_id)
         _publish_chat_ingress_payload(
             payload=payload,
             runtime_request_id=runtime_request_id,
             logical_request_id=request_id,
         )
         return runtime_request_id
+
+
+def _ensure_request_started(run: Any, runtime_request_id: str) -> None:
+    if not runtime_request_id:
+        return
+    starter = getattr(run, "start_request", None)
+    if not callable(starter):
+        return
+    try:
+        starter(runtime_request_id)
+    except Exception:
+        pass
 
 
 def open_chat_event_subscription(
@@ -916,6 +930,7 @@ def _start_chat_service_run(*, ordered_event_backpressure: str):
         ingress={
             "kind": "topic",
             "topic_id": _CHAT_INGRESS_TOPIC_ID,
+            "event_type": _CHAT_INGRESS_EVENT_TYPE,
             "tags": {"channel": "sage.studio.chat"},
         },
         egress={
