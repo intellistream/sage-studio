@@ -231,26 +231,6 @@ class NodeRegistry:
         except ImportError:
             pass
 
-        # ------------------------------------------------------------------
-        # Chat Pipeline Stages (Studio-local operators used by ChatPipelineService)
-        # ------------------------------------------------------------------
-        try:
-            from sage.studio.services.chat_pipeline import (
-                ContextRetrievalStage,
-                GeneratorStage,
-                IntentStage,
-                PackageResultStage,
-                PromptStage,
-            )
-
-            self._registry["intent_stage"] = IntentStage
-            self._registry["context_retrieval_stage"] = ContextRetrievalStage
-            self._registry["prompt_stage"] = PromptStage
-            self._registry["generator_stage"] = GeneratorStage
-            self._registry["package_result_stage"] = PackageResultStage
-        except ImportError:
-            pass
-
     def register(self, node_type: str, operator_class: type[MapOperator]):
         """Register a new node type"""
         self._registry[node_type] = operator_class

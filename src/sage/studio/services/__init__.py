@@ -5,7 +5,6 @@ Studio Services - Business Logic Layer
 所有 Pipeline 执行都委托给 SAGE Engine。
 """
 
-from .chat_pipeline import ChatPipelineService, get_chat_pipeline_service
 from .document_loader import DocumentLoader, load_documents
 from .file_upload_service import FileUploadService, get_file_upload_service
 from .memory_integration import MemoryIntegrationService, get_memory_service
@@ -27,9 +26,6 @@ from .workflow_generator import (
 
 
 __all__ = [
-    # Chat Pipeline
-    "ChatPipelineService",
-    "get_chat_pipeline_service",
     # Document Loading
     "DocumentLoader",
     "load_documents",

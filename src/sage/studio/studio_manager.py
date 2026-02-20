@@ -31,6 +31,7 @@ class StudioManager:
         # __file__ -> studio_manager.py
         # .parent -> studio/
         self.studio_package_dir = Path(__file__).parent
+        self.project_root = self.studio_package_dir.parent.parent.parent
         self.frontend_dir = self.studio_package_dir / "frontend"
         self.backend_dir = Path(__file__).parent / "config" / "backend"
 
@@ -165,8 +166,13 @@ class StudioManager:
 
                 if psutil.pid_exists(pid):
                     proc = psutil.Process(pid)
-                    # 检查是否是Python进程且包含api.py
-                    if "python" in proc.name().lower() and "api.py" in " ".join(proc.cmdline()):
+                    # 检查是否是Python进程且包含新的 uvicorn app 入口
+                    cmdline = " ".join(proc.cmdline())
+                    if "python" in proc.name().lower() and (
+                        "sage.studio.api.app:app" in cmdline
+                        or "sage.studio.api.app" in cmdline
+                        or ("uvicorn" in cmdline and "sage.studio.api" in cmdline)
+                    ):
                         return pid
 
                 # PID 文件存在但进程不存在，清理文件
@@ -1522,12 +1528,6 @@ if __name__ == "__main__":
                 console.print(f"[yellow]后端API已经在运行 (PID: {running_pid})[/yellow]")
             return True
 
-        # 检查后端文件是否存在
-        api_file = self.backend_dir / "api.py"
-        if not api_file.exists():
-            console.print(f"[red]后端API文件不存在: {api_file}[/red]")
-            return False
-
         # 配置参数
         config = self.load_config()
         backend_port = port or config.get("backend_port", self.backend_port)
@@ -1558,11 +1558,22 @@ if __name__ == "__main__":
 
         try:
             # 启动后端进程
-            cmd = [sys.executable, str(api_file)]
+            cmd = [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "sage.studio.api.app:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                str(backend_port),
+                "--log-level",
+                "info",
+            ]
             log_handle = open(self.backend_log_file, "w")
             process = subprocess.Popen(
                 cmd,
-                cwd=self.backend_dir,
+                cwd=self.project_root,
                 stdin=subprocess.DEVNULL,  # 阻止子进程读取 stdin
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,

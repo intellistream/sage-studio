@@ -306,7 +306,7 @@ async def pipeline_result_to_openai_sse(
     model: str = "sage-rag",
     chunk_size: int = 4,
 ) -> AsyncGenerator[str, None]:
-    """Convert a buffered ``ChatPipelineService`` result into OpenAI-compatible SSE chunks.
+    """Convert a buffered chat pipeline result into OpenAI-compatible SSE chunks.
 
     The pipeline returns ``{"text": str, "meta": dict}`` synchronously.
     This helper splits the text into small word-based pieces and yields
