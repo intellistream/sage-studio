@@ -10,9 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from sage.studio.api.auth import build_auth_router
 from sage.studio.api.canvas import build_canvas_router
 from sage.studio.api.chat import build_chat_router
 from sage.studio.api.endpoints import build_endpoint_router
+from sage.studio.api.sessions import build_sessions_router
 from sage.studio.config.ports import StudioPorts
 from sage.studio.runtime.endpoints import bootstrap_dashscope_endpoint_from_env
 
@@ -53,6 +55,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(build_auth_router())
+    app.include_router(build_sessions_router())
     app.include_router(build_chat_router())
     app.include_router(build_endpoint_router())
     app.include_router(build_canvas_router())
