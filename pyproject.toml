@@ -34,7 +34,7 @@ classifiers = [
 # Core dependencies
 dependencies = [
     # SAGE CLI (provides 'sage' command with plugin support)
-    "isage-cli>=0.2.4.12",
+    "isage-cli>=0.2.4.13",
 
     # SAGE meta package (includes all core packages)
     "isage>=0.2.4.15",
