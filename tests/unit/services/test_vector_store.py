@@ -116,8 +116,8 @@ class TestVectorStoreInit:
                 persist_dir=tmpdir,
             )
             assert store.collection_name == "test_collection"
-            assert store.embedding_model == "BAAI/bge-m3"
-            assert store.embedding_dim == 1024
+            assert store.embedding_model == "BAAI/bge-small-zh-v1.5"
+            assert store.embedding_dim == 512
             assert store.persist_dir == Path(tmpdir)
 
     def test_custom_parameters(self):
@@ -259,7 +259,7 @@ class TestVectorStoreOperations:
         stats = mock_store.get_stats()
 
         assert stats["collection_name"] == "mock_test"
-        assert stats["embedding_model"] == "BAAI/bge-m3"
+        assert stats["embedding_model"] == "BAAI/bge-small-zh-v1.5"
         assert stats["embedding_dim"] == 1024
         assert "total_vectors" in stats
 
@@ -311,6 +311,7 @@ class TestVectorStoreIntegration:
     @pytest.fixture
     def real_store(self):
         """Create a real VectorStore for integration testing."""
+        pytest.importorskip("sage.neuromem")
         with tempfile.TemporaryDirectory() as tmpdir:
             try:
                 store = VectorStore(

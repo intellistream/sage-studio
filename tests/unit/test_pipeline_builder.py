@@ -106,6 +106,42 @@ class TestPipelineBuilder:
         with pytest.raises(Exception):  # noqa: B017
             builder.build(visual_pipeline)
 
+    def test_build_with_diagnostics_failure(self):
+        visual_pipeline = VisualPipeline(
+            id="empty_pipeline",
+            name="Empty Pipeline",
+            nodes=[],
+            connections=[],
+        )
+
+        builder = PipelineBuilder()
+        env, diagnostics = builder.build_with_diagnostics(visual_pipeline)
+        assert env is None
+        assert diagnostics["ok"] is False
+        assert "error" in diagnostics
+        assert "registry" in diagnostics
+
+    def test_build_with_diagnostics_success(self):
+        node1 = VisualNode(
+            id="node1",
+            type="retriever",
+            label="Retriever",
+            config={"top_k": 5},
+            position={"x": 100, "y": 100},
+        )
+
+        visual_pipeline = VisualPipeline(
+            id="test_pipeline",
+            name="Test Pipeline",
+            nodes=[node1],
+            connections=[],
+        )
+
+        builder = PipelineBuilder()
+        env, diagnostics = builder.build_with_diagnostics(visual_pipeline)
+        assert env is not None
+        assert diagnostics["ok"] is True
+
     def test_topological_sort_simple(self):
         """测试简单的拓扑排序"""
         node1 = VisualNode(id="node1", type="retriever", label="retriever", config={}, position={})

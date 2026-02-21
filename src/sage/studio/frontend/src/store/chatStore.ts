@@ -9,30 +9,23 @@
  */
 
 import { create } from 'zustand'
-import type { ChatSessionSummary } from '../services/api'
 import type {
+    ChatMessage,
+    ChatSessionSummary,
     ReasoningStep,
-    ReasoningStepType,
-    ReasoningStepStatus,
-    ToolCallMetadata,
-} from '../components/ReasoningAccordion'
+} from './chatDomain'
 
 type SetState<T> = (partial: T | Partial<T> | ((state: T) => T | Partial<T>)) => void
 type GetState<T> = () => T
 
-export interface ChatMessage {
-    id: string
-    role: 'user' | 'assistant' | 'system'
-    content: string
-    timestamp: string
-    isStreaming?: boolean
-    isReasoning?: boolean  // 是否正在推理中
-    reasoningSteps?: ReasoningStep[]  // 推理步骤
-    metadata?: Record<string, unknown>
-}
-
 // 导出类型供其他组件使用
-export type { ReasoningStep, ReasoningStepType, ReasoningStepStatus, ToolCallMetadata }
+export type {
+    ChatMessage,
+    ReasoningStep,
+    ReasoningStepType,
+    ReasoningStepStatus,
+    ToolCallMetadata,
+} from './chatDomain'
 
 interface ChatState {
     // 当前会话
@@ -161,14 +154,12 @@ export const useChatStore = create<ChatState>((
     }),
 
     appendToMessage: (sessionId: string, messageId: string, chunk: string) => set((state: ChatState) => {
-        console.log('[Store Debug] appendToMessage called:', { sessionId, messageId, chunk })
         const sessionMessages = state.messages[sessionId] || []
         const updatedMessages = sessionMessages.map((msg: ChatMessage) =>
             msg.id === messageId
                 ? { ...msg, content: msg.content + chunk }
                 : msg
         )
-        console.log('[Store Debug] Updated messages:', updatedMessages.find((m: ChatMessage) => m.id === messageId))
         return {
             messages: {
                 ...state.messages,
@@ -265,3 +256,8 @@ export const useChatStore = create<ChatState>((
         }
     },
 }))
+
+export const selectSessions = (state: ChatState): ChatSessionSummary[] => state.sessions
+export const selectCurrentSessionId = (state: ChatState): string | null => state.currentSessionId
+export const selectMessagesBySession = (sessionId: string) => (state: ChatState): ChatMessage[] =>
+    state.messages[sessionId] || []

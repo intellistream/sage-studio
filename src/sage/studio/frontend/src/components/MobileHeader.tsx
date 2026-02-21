@@ -7,7 +7,7 @@
  * - Right: Theme toggle + User menu + New chat button
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Menu, Plus, Sun, Moon, User, LogOut, ChevronDown, Check } from 'lucide-react'
 import { SageIcon } from './SageIcon'
@@ -31,11 +31,21 @@ export default function MobileHeader({ onMenuClick, onNewChat, llmStatus, onSele
     const modelButtonRef = useRef<HTMLButtonElement>(null)
     const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
 
+    const allModels = llmStatus?.available_models || []
+    const chatModels = allModels.filter(model => model.engine_type !== 'embedding')
+    const selectableModels = chatModels.length > 0 ? chatModels : allModels
+
+    const currentModel = allModels.find(model => model.name === llmStatus?.model_name)
+    const isGatewayService = llmStatus?.service_type === 'gateway'
+
     // Get current model display name
-    const modelName = llmStatus?.model_name
-        ? (llmStatus.model_name.split('/').pop() || llmStatus.model_name.split('__').pop() || 'Model')
-        : 'SAGE'
-    const isHealthy = llmStatus?.healthy
+    const modelName = isGatewayService
+        ? 'sageLLM'
+        : (currentModel?.name
+            ? (currentModel.name.split('/').pop() || currentModel.name.split('__').pop() || 'Model')
+            : 'sageLLM')
+    const isHealthy = Boolean(llmStatus?.healthy || selectableModels.some(model => model.healthy))
+    const connectionLabel = llmStatus ? (isHealthy ? 'Connected' : 'Disconnected') : 'Connecting'
 
     // Update menu position when opening
     useEffect(() => {
@@ -47,6 +57,18 @@ export default function MobileHeader({ onMenuClick, onNewChat, llmStatus, onSele
             })
         }
     }, [showModelMenu])
+
+    const toggleModelMenu = (event: MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation()
+        if (!showModelMenu && modelButtonRef.current) {
+            const rect = modelButtonRef.current.getBoundingClientRect()
+            setMenuPosition({
+                top: rect.bottom + 8,
+                left: rect.left + rect.width / 2,
+            })
+        }
+        setShowModelMenu(prev => !prev)
+    }
 
     const handleModelSelect = (model: { name: string; base_url: string }) => {
         onSelectModel?.(model.name, model.base_url)
@@ -71,9 +93,11 @@ export default function MobileHeader({ onMenuClick, onNewChat, llmStatus, onSele
             <div className="relative flex items-center">
                 <button
                     ref={modelButtonRef}
-                    onClick={() => setShowModelMenu(!showModelMenu)}
+                    type="button"
+                    onClick={toggleModelMenu}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-[--gemini-hover-bg] transition-colors"
                     aria-label="Select model"
+                    aria-expanded={showModelMenu}
                 >
                     <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
                         <SageIcon size={12} className="text-white" />
@@ -105,14 +129,15 @@ export default function MobileHeader({ onMenuClick, onNewChat, llmStatus, onSele
                             left: menuPosition.left,
                             transform: 'translateX(-50%)',
                         }}
+                        onClick={(event) => event.stopPropagation()}
                     >
                         <div className="px-4 py-2 border-b border-[--gemini-border]">
                             <div className="text-xs font-medium text-[--gemini-text-secondary] uppercase tracking-wide">
                                 Select Model
                             </div>
                         </div>
-                        {llmStatus?.available_models && llmStatus.available_models.length > 0 ? (
-                            llmStatus.available_models.map((model) => (
+                        {selectableModels.length > 0 ? (
+                            selectableModels.map((model) => (
                                 <button
                                     key={model.name}
                                     onClick={() => handleModelSelect(model)}
@@ -141,7 +166,7 @@ export default function MobileHeader({ onMenuClick, onNewChat, llmStatus, onSele
                             <div className="px-4 py-3 text-sm text-[--gemini-text-secondary]">
                                 <div className="font-medium text-[--gemini-text-primary]">{modelName}</div>
                                 <div className="text-xs mt-1">
-                                    {llmStatus?.is_local ? 'Local Model' : 'Cloud Model'} · {isHealthy ? 'Connected' : 'Disconnected'}
+                                    {isGatewayService ? 'sageLLM Gateway' : (llmStatus?.is_local ? 'Local Model' : 'Cloud Model')} · {connectionLabel}
                                 </div>
                             </div>
                         )}

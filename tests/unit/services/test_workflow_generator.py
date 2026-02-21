@@ -36,15 +36,15 @@ def workflow(monkeypatch):
     stub_rule = StubGenerator()
 
     monkeypatch.setattr(
-        "sage.libs.agentic.workflow.GenerationContext",
+        "sage_libs.sage_agentic.workflow.GenerationContext",
         lambda **kwargs: kwargs,
     )
     monkeypatch.setattr(
-        "sage.libs.agentic.workflow.generators.LLMWorkflowGenerator",
+        "sage_libs.sage_agentic.workflow.generators.LLMWorkflowGenerator",
         lambda: stub_llm,
     )
     monkeypatch.setattr(
-        "sage.libs.agentic.workflow.generators.RuleBasedWorkflowGenerator",
+        "sage_libs.sage_agentic.workflow.generators.RuleBasedWorkflowGenerator",
         lambda: stub_rule,
     )
 

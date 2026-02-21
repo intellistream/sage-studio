@@ -275,11 +275,18 @@ class KnowledgeManager:
             logger.info("No sources marked for auto_load")
             return
 
+        try:
+            asyncio.get_running_loop()
+            logger.info(
+                "Skip auto-load in active event loop; sources will be loaded on demand"
+            )
+            return
+        except RuntimeError:
+            pass
+
         logger.info(f"Auto-loading knowledge sources: {auto_load_sources}")
 
         # 在新事件循环中执行异步加载
-        import asyncio
-
         loop = asyncio.new_event_loop()
         try:
             for source_name in auto_load_sources:

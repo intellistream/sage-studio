@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -25,6 +26,9 @@ def request_chat_completion(*, endpoint: ResolvedEndpoint, message: str, timeout
             continue
         headers[normalized_key] = value
 
+    max_tokens = _resolve_max_tokens()
+    request_timeout_s = _resolve_timeout(timeout_s)
+
     payload = {
         "model": endpoint.model_id,
         "messages": [
@@ -34,10 +38,11 @@ def request_chat_completion(*, endpoint: ResolvedEndpoint, message: str, timeout
             }
         ],
         "stream": False,
+        "max_tokens": max_tokens,
     }
 
     try:
-        with httpx.Client(timeout=timeout_s) as client:
+        with httpx.Client(timeout=request_timeout_s) as client:
             response = client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
@@ -86,6 +91,24 @@ def _extract_text_content(payload: Any) -> str | None:
             return delta_text.strip()
 
     return None
+
+
+def _resolve_max_tokens() -> int:
+    raw = os.environ.get("STUDIO_CHAT_MAX_TOKENS", "128").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 128
+    return max(16, min(value, 512))
+
+
+def _resolve_timeout(default_timeout_s: float) -> float:
+    raw = os.environ.get("STUDIO_CHAT_PROVIDER_TIMEOUT_S", "90").strip()
+    try:
+        configured = float(raw)
+    except ValueError:
+        configured = 90.0
+    return max(10.0, configured, default_timeout_s)
 
 
 __all__ = ["InferenceCallError", "request_chat_completion"]

@@ -136,6 +136,18 @@ class TestNodeRegistry:
         result_cls = registry.get_operator("test_type")
         assert result_cls is SecondOperator
 
+    def test_diagnose_dependencies_returns_structured_result(self):
+        registry = NodeRegistry()
+        diagnostics = registry.diagnose_dependencies()
+
+        assert isinstance(diagnostics, list)
+        if diagnostics:
+            sample = diagnostics[0]
+            assert "node_type" in sample
+            assert "status" in sample
+            assert "module" in sample
+            assert "symbol" in sample
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

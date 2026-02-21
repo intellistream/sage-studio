@@ -42,8 +42,9 @@ def knowledge_manager(mock_config_file):
 async def test_ensure_source_loaded(knowledge_manager):
     # Mock VectorStore
     with patch("sage.studio.services.vector_store.VectorStore") as MockVectorStore:
-        mock_vs = AsyncMock()
-        mock_vs.add_documents.return_value = 10
+        mock_vs = MagicMock()
+        mock_vs.has_data.return_value = False
+        mock_vs.add_documents = AsyncMock(return_value=10)
         MockVectorStore.return_value = mock_vs
 
         # Mock DocumentLoader

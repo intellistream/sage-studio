@@ -1,62 +1,53 @@
 from fastapi.testclient import TestClient
 
-import sage.studio.config.backend.api as api
-from sage.studio.models.agent_step import AgentStep
+from sage.studio.api.app import app
 
 
-class _StubOrchestrator:
-    def __init__(self):
-        self.calls = []
+def test_chat_run_create_forwards_payload(monkeypatch):
+    captured: dict = {}
 
-    async def process_message(
-        self,
+    def _fake_submit_chat_service_request(
         *,
-        message: str,
+        request_id: str,
+        run_id: str,
         session_id: str,
-        history: list | None = None,
-        should_index: bool = False,
-        metadata: dict | None = None,
-        evidence: list | None = None,
-    ):
-        self.calls.append(
+        model: str,
+        message: str,
+        ordered_event_backpressure: str = "drop_old",
+    ) -> str:
+        captured.update(
             {
-                "message": message,
+                "request_id": request_id,
+                "run_id": run_id,
                 "session_id": session_id,
-                "history": history or [],
-                "should_index": should_index,
-                "metadata": metadata or {},
-                "evidence": evidence or [],
+                "model": model,
+                "message": message,
+                "ordered_event_backpressure": ordered_event_backpressure,
             }
         )
-        yield AgentStep.create("reasoning", "route")
-        yield "answer"
+        return "runtime-req-1"
 
+    monkeypatch.setattr(
+        "sage.studio.runtime.chat.submit_chat_service_request",
+        _fake_submit_chat_service_request,
+    )
 
-def test_agent_chat_sync_forwards_payload(monkeypatch):
-    stub = _StubOrchestrator()
-    monkeypatch.setattr(api, "get_orchestrator", lambda: stub)
-
-    client = TestClient(api.app)
+    client = TestClient(app)
     payload = {
-        "message": "q1",
+        "model": "Qwen/Qwen2.5-0.5B-Instruct",
         "session_id": "sess-1",
-        "history": [{"role": "user", "content": "prev"}],
-        "should_index": True,
-        "metadata": {"route": "agentic"},
-        "evidence": [{"content": "ev"}],
+        "message": "q1",
     }
 
-    resp = client.post("/api/chat/agent/sync", json=payload)
+    resp = client.post("/api/chat/v1/runs", json=payload)
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["response"] == "answer"
-    assert body["steps"][0]["type"] == "reasoning"
+    assert body["status"] == "accepted"
+    assert body["runtime_request_id"] == "runtime-req-1"
+    assert body["run"]["kind"] == "chat"
+    assert body["run"]["run_id"] == captured["run_id"]
 
-    assert len(stub.calls) == 1
-    call = stub.calls[0]
-    assert call["message"] == "q1"
-    assert call["session_id"] == "sess-1"
-    assert call["should_index"] is True
-    assert call["metadata"]["route"] == "agentic"
-    assert call["evidence"] == [{"content": "ev"}]
+    assert captured["session_id"] == "sess-1"
+    assert captured["model"] == "Qwen/Qwen2.5-0.5B-Instruct"
+    assert captured["message"] == "q1"

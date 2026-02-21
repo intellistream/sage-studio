@@ -135,24 +135,32 @@ function ModelSelector({
     llmStatus: LLMStatus | null
     onSelectModel: (modelName: string, baseUrl: string) => void
 }) {
-    const modelName = llmStatus?.model_name
-        ? (llmStatus.model_name.split('/').pop() || llmStatus.model_name.split('__').pop() || 'Unknown')
-        : 'SAGE'
+    const allModels = llmStatus?.available_models || []
+    const chatModels = allModels.filter(model => model.engine_type !== 'embedding')
+    const selectableModels = chatModels.length > 0 ? chatModels : allModels
+
+    const currentModelName = llmStatus?.model_name
+    const currentModel = allModels.find(m => m.name === currentModelName)
+
+    const isGatewayService = llmStatus?.service_type === 'gateway'
+    const modelName = isGatewayService
+        ? 'sageLLM'
+        : (currentModel?.name
+            ? (currentModel.name.split('/').pop() || currentModel.name.split('__').pop() || 'Unknown')
+            : 'sageLLM')
 
     const isLocal = llmStatus?.is_local
-    const isHealthy = llmStatus?.healthy
+    const isHealthy = Boolean(llmStatus?.healthy || selectableModels.some(model => model.healthy))
+    const connectionLabel = llmStatus ? (isHealthy ? 'Connected' : 'Disconnected') : 'Connecting'
 
     const handleMenuClick = (e: any) => {
-        const selectedModel = llmStatus?.available_models?.find(m => m.name === e.key)
+        const selectedModel = selectableModels.find(m => m.name === e.key)
         if (selectedModel) {
             onSelectModel(selectedModel.name, selectedModel.base_url)
         }
     }
 
-    const currentModelName = llmStatus?.model_name
-    const currentModel = llmStatus?.available_models?.find(m => m.name === currentModelName)
-
-    const items = llmStatus?.available_models?.map(model => {
+    const items = selectableModels.map(model => {
         const isSelected = model.name === currentModelName
 
         return {
@@ -198,7 +206,7 @@ function ModelSelector({
                     <div className="py-1">
                         <div className="font-medium">{modelName}</div>
                         <div className="text-xs text-[--gemini-text-secondary]">
-                            {isLocal ? 'Local Model' : 'Cloud Model'} · {isHealthy ? 'Connected' : 'Disconnected'}
+                            {(isGatewayService ? 'sageLLM Gateway' : (isLocal ? 'Local Model' : 'Cloud Model'))} · {connectionLabel}
                         </div>
                     </div>
                 ),
@@ -295,11 +303,6 @@ function ChatInput({
 
     // Determine if we should show stop button
     const showStop = isStreaming && !!onStop
-
-    // Debug log
-    useEffect(() => {
-        console.log('[ChatInput] State:', { isStreaming, hasOnStop: !!onStop, showStop, isSending })
-    }, [isStreaming, onStop, showStop, isSending])
 
     return (
         <div className={`w-full mx-auto ${isMobile ? 'px-3 pb-3' : 'max-w-[830px] px-4 pb-6'}`}>
@@ -542,7 +545,6 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
 
             try {
                 await selectLLMModel(modelName, baseUrl)
-                console.log(`✅ Model selection API called for: ${modelName}`)
 
                 // Wait for backend config to update (retry up to 5 times with 1s interval)
                 let retries = 5
@@ -551,7 +553,6 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                 while (retries > 0) {
                     await new Promise(resolve => setTimeout(resolve, 1000))
                     const status = await getLLMStatus()
-                    console.log(`🔄 Status check: model_name=${status.model_name}, target=${modelName}`)
 
                     // Success: model_name matches (don't require healthy yet)
                     if (status.model_name === modelName) {
@@ -574,8 +575,6 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                 // Even if model_name doesn't match yet, force update UI to show the selection
                 if (!modelNameMatched) {
                     const finalStatus = await getLLMStatus()
-                    console.warn(`⚠️ Model name mismatch: expected ${modelName}, got ${finalStatus.model_name}`)
-
                     // Force update the status to show the selected model
                     finalStatus.model_name = modelName
                     finalStatus.base_url = baseUrl
@@ -657,14 +656,9 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     }
 
     const handleSendMessage = async () => {
-        console.log('[ChatMode Debug] handleSendMessage called, input:', currentInput)
-        if (!currentInput.trim() || isStreaming || isSending) {
-            console.log('[ChatMode Debug] Early return - empty input or busy:', { isEmpty: !currentInput.trim(), isStreaming, isSending })
-            return
-        }
+        if (!currentInput.trim() || isStreaming || isSending) return
 
         const userMessageContent = currentInput.trim()
-        console.log('[ChatMode Debug] Processing message:', userMessageContent)
         setCurrentInput('')
         setIsSending(true)
 
@@ -707,7 +701,18 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
             setIsStreaming(true)
             setStreamingMessageId(assistantMessageId)
 
-            const selectedModel = llmStatus?.model_name || 'sage-default'
+            // Model resolution: use the polled llmStatus model_name.
+            // The backend can also auto-detect from gateway, so model is best-effort here.
+            let selectedModel = llmStatus?.model_name || ''
+
+            // If we don't have a model yet (initial load race), do one fresh fetch
+            if (!selectedModel) {
+                const freshStatus = await getLLMStatus().catch(() => null)
+                if (freshStatus) {
+                    setLlmStatus(freshStatus)
+                    selectedModel = freshStatus.model_name || ''
+                }
+            }
 
             const controller = await sendChatMessage(
                 userMessageContent,
@@ -726,6 +731,13 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                     setIsStreaming(false)
                     setStreamingMessageId(null)
                     setMessageReasoning(sessionId, assistantMessageId, false)
+
+                    // If response completed but message content is still empty, show fallback
+                    const currentMessages = useChatStore.getState().messages[sessionId!] || []
+                    const assistantMsg = currentMessages.find((m: ChatMessage) => m.id === assistantMessageId)
+                    if (assistantMsg && !assistantMsg.content.trim()) {
+                        appendToMessage(sessionId!, assistantMessageId, '(No response from model. Please try again.)')
+                    }
 
                     updateSessionStats(sessionId!, {
                         message_count: (messages[sessionId!] || []).length,
@@ -759,20 +771,12 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     }
 
     const handleStopGeneration = () => {
-        console.log('[ChatMode] handleStopGeneration called', {
-            hasController: !!abortControllerRef.current,
-            isStreaming,
-            streamingMessageId
-        })
         if (abortControllerRef.current) {
-            console.log('[ChatMode] Aborting stream...')
             abortControllerRef.current.abort()
             abortControllerRef.current = null
             setIsStreaming(false)
             setStreamingMessageId(null)
             antMessage.info('Generation stopped')
-        } else {
-            console.warn('[ChatMode] No controller to abort')
         }
     }
 

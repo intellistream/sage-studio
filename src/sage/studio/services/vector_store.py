@@ -157,7 +157,8 @@ class VectorStore:
         """初始化 VDB collection"""
         import logging as _logging
 
-        from neuromem import MemoryManager
+        from sage.neuromem import MemoryManager
+        from sage.neuromem.memory_collection.unified_collection import UnifiedCollection
 
         _vs_logger = _logging.getLogger(__name__)
 
@@ -165,20 +166,14 @@ class VectorStore:
         data_dir = str(self.persist_dir)
         self._manager = MemoryManager(data_dir)
 
-        # 尝试获取现有 collection，不存在则创建
-        self._collection = self._manager.get_collection(self.collection_name)
+        # 直接从 manager 内存注册表读取，避免依赖不稳定的 get_collection 实现
+        self._collection = self._manager.collections.get(self.collection_name)
 
         if self._collection is None:
             _vs_logger.info(f"Creating new collection '{self.collection_name}'")
 
             # 创建新的 collection
-            collection_config = {
-                "dim": self.embedding_dim,
-                "description": f"SAGE Studio knowledge base: {self.collection_name}",
-            }
-            self._collection = self._manager.create_collection(
-                self.collection_name, collection_config
-            )
+            self._collection = UnifiedCollection(self.collection_name)
 
             if self._collection is None:
                 raise RuntimeError(f"Failed to create collection '{self.collection_name}'")
@@ -278,7 +273,7 @@ class VectorStore:
                     "source_file": chunk.source_file,
                     "chunk_index": str(chunk.chunk_index),
                     "chunk_id": chunk.chunk_id,
-                    "vector": vector,  # Pass vector via metadata for FAISS index
+                    "vector": vector.tolist(),
                     **{k: str(v) for k, v in chunk.metadata.items()},
                 }
 

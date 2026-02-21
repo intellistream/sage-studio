@@ -85,7 +85,8 @@ def ensure_model_selected(http_session, ensure_llm_gateway, ensure_studio_backen
         f"Model selection failed: {response.status_code} - {response.text}"
     )
     result = response.json()
-    assert result.get("message"), "Model selection returned no message."
+    assert result.get("status") == "ok", f"Unexpected selection result: {result}"
+    assert result.get("model_name"), "Model selection returned no model_name."
 
     if result.get("engine_started"):
         time.sleep(5)
@@ -102,7 +103,7 @@ def test_studio_backend_running(ensure_studio_backend):
 
 
 def test_model_selection(ensure_model_selected):
-    assert ensure_model_selected.get("message")
+    assert ensure_model_selected.get("status") == "ok"
 
 
 def test_chat_functionality(http_session, ensure_model_selected, ensure_studio_backend):
@@ -110,11 +111,12 @@ def test_chat_functionality(http_session, ensure_model_selected, ensure_studio_b
     headers = {"Authorization": f"Bearer {token}"}
     chat_data = {
         "message": "Hello, this is a test.",
-        "model": "sage-default",
+        "model": "Qwen/Qwen2.5-0.5B-Instruct",
+        "session_id": "integration-model-switch-session",
     }
 
     response = http_session.post(
-        f"{STUDIO_BACKEND_URL}/api/chat/message",
+        f"{STUDIO_BACKEND_URL}/api/chat/v1/runs",
         json=chat_data,
         headers=headers,
         timeout=30,
@@ -124,5 +126,5 @@ def test_chat_functionality(http_session, ensure_model_selected, ensure_studio_b
         f"Chat request failed: {response.status_code} - {response.text}"
     )
     result = response.json()
-    content = result.get("content", "")
-    assert content, "Chat response content is empty."
+    assert result.get("status") == "accepted"
+    assert result.get("runtime_request_id")

@@ -81,17 +81,10 @@ def stop(
 def status():
     """Show Studio status."""
     manager = _get_studio_manager()
-    status_info = manager.status()
-    # Fix: Handle None return value
-    if status_info and status_info.get("running"):
-        console.print("[green]✓ Studio is running[/green]")
-        config = status_info.get("config", {})
-        console.print(f"  Port: {config.get('port', 'N/A')}")
-        console.print(f"  Host: {config.get('host', 'N/A')}")
-    elif status_info is None:
-        console.print("[red]❌ Error getting Studio status[/red]")
-    else:
-        console.print("[yellow]Studio is not running[/yellow]")
+    try:
+        manager.status()
+    except Exception as exc:
+        console.print(f"[red]❌ Error getting Studio status: {exc}[/red]")
 
 
 @app.command()

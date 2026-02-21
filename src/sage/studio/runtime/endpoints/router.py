@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from sage.studio.runtime.endpoints.bootstrap import (
     bootstrap_dashscope_endpoint_from_env,
     bootstrap_gateway_endpoint_from_env,
+    bootstrap_local_llm_endpoint_from_env,
 )
 from sage.studio.runtime.endpoints.registry import get_endpoint_registry
 from sage.studio.runtime.endpoints.secrets import decrypt_endpoint_secret
@@ -23,6 +24,7 @@ class ResolvedEndpoint:
 
 def resolve_endpoint_for_model(model_id: str) -> ResolvedEndpoint | None:
     bootstrap_dashscope_endpoint_from_env()
+    bootstrap_local_llm_endpoint_from_env()
     bootstrap_gateway_endpoint_from_env()
 
     normalized_model = model_id.strip()

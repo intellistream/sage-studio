@@ -3,8 +3,14 @@ Node Registry - Maps Studio UI node types to SAGE Operators
 """
 
 import re
+import logging
+from importlib import import_module
 
 from sage.common.core.functions import MapFunction as MapOperator
+from .node_manifest import NODE_PLUGIN_MANIFEST
+
+
+logger = logging.getLogger(__name__)
 
 
 def convert_node_type_to_snake_case(node_type: str) -> str:
@@ -51,13 +57,37 @@ class NodeRegistry:
     def __init__(self):
         """Initialize Registry and register all available node types"""
         self._registry: dict[str, type[MapOperator]] = {}
+        self._diagnostics: dict[str, dict[str, str]] = {}
         self._register_default_operators()
+
+    def _register_from_manifest(self):
+        for item in NODE_PLUGIN_MANIFEST:
+            node_type = item["node_type"]
+            module_name = item["module"]
+            symbol_name = item["symbol"]
+            try:
+                module = import_module(module_name)
+                operator_class = getattr(module, symbol_name)
+                self._registry[node_type] = operator_class
+                self._diagnostics[node_type] = {
+                    "status": "available",
+                    "module": module_name,
+                    "symbol": symbol_name,
+                }
+            except Exception as exc:
+                self._diagnostics[node_type] = {
+                    "status": "missing",
+                    "module": module_name,
+                    "symbol": symbol_name,
+                    "error": str(exc),
+                }
 
     def _register_default_operators(self):
         """Register default Operator mappings"""
 
         # Generic map operator
         self._registry["map"] = MapOperator
+        self._register_from_manifest()
 
         # ------------------------------------------------------------------
         # RAG Generators
@@ -190,7 +220,7 @@ class NodeRegistry:
             self._registry["json_file_source"] = JSONFileSource  # type: ignore
             self._registry["text_file_source"] = TextFileSource  # type: ignore
         except ImportError as e:
-            print(f"Warning: Could not import Source operators: {e}")
+            logger.warning("Could not import Source operators", extra={"error": str(e)})
 
         # Sink Operators (用于 Pipeline 构建，但不作为 MapOperator 验证)
         try:
@@ -207,7 +237,7 @@ class NodeRegistry:
             self._registry["file_sink"] = FileSink  # type: ignore
             self._registry["mem_write_sink"] = MemWriteSink  # type: ignore
         except ImportError as e:
-            print(f"Warning: Could not import Sink operators: {e}")
+            logger.warning("Could not import Sink operators", extra={"error": str(e)})
 
         # ------------------------------------------------------------------
         # Context I/O (ContextFileSource / ContextFileSink)
@@ -242,6 +272,13 @@ class NodeRegistry:
     def list_types(self) -> list[str]:
         """List all registered node types"""
         return sorted(self._registry.keys())
+
+    def diagnose_dependencies(self) -> list[dict[str, str]]:
+        """Return plugin availability diagnostics for API/UI display."""
+        return [
+            {"node_type": node_type, **diagnostic}
+            for node_type, diagnostic in sorted(self._diagnostics.items())
+        ]
 
 
 # Singleton instance

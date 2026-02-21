@@ -38,7 +38,8 @@ describe('MobileHeader', () => {
 
     it('renders correctly', () => {
         render(<MobileHeader {...defaultProps} />)
-        expect(screen.getByText('test-model')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /select model/i })).toBeInTheDocument()
+        expect(screen.getByText('SAGE')).toBeInTheDocument()
     })
 
     it('calls onMenuClick when menu button is clicked', () => {
@@ -53,5 +54,42 @@ describe('MobileHeader', () => {
         const newChatButton = screen.getByRole('button', { name: /new chat/i })
         fireEvent.click(newChatButton)
         expect(defaultProps.onNewChat).toHaveBeenCalled()
+    })
+
+    it('opens model menu and selects a model', () => {
+        const onSelectModel = vi.fn()
+        render(
+            <MobileHeader
+                {...defaultProps}
+                onSelectModel={onSelectModel}
+                llmStatus={{
+                    ...defaultProps.llmStatus,
+                    available_models: [
+                        {
+                            name: 'test-model',
+                            healthy: true,
+                            engine_type: 'llm',
+                            base_url: '/api',
+                            is_local: true,
+                            description: 'Local test model',
+                        },
+                        {
+                            name: 'backup-model',
+                            healthy: true,
+                            engine_type: 'llm',
+                            base_url: '/api',
+                            is_local: true,
+                            description: 'Backup model',
+                        },
+                    ],
+                }}
+            />
+        )
+
+        fireEvent.click(screen.getByRole('button', { name: /select model/i }))
+        expect(screen.getByText('Select Model')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByText('backup-model'))
+        expect(onSelectModel).toHaveBeenCalledWith('backup-model', '/api')
     })
 })

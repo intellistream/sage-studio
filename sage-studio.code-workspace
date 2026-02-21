@@ -17,46 +17,6 @@
 			"path": "../sagellm"
 		},
 		{
-			"name": "sagellm-core",
-			"path": "../sagellm-core"
-		},
-		{
-			"name": "sagellm-backend",
-			"path": "../sagellm-backend"
-		},
-		{
-			"name": "sagellm-control-plane",
-			"path": "../sagellm-control-plane"
-		},
-		{
-			"name": "sagellm-gateway",
-			"path": "../sagellm-gateway"
-		},
-		{
-			"name": "sagellm-protocol",
-			"path": "../sagellm-protocol"
-		},
-		{
-			"name": "sagellm-comm",
-			"path": "../sagellm-comm"
-		},
-		{
-			"name": "sagellm-kv-cache",
-			"path": "../sagellm-kv-cache"
-		},
-		{
-			"name": "sagellm-compression",
-			"path": "../sagellm-compression"
-		},
-		{
-			"name": "sagellm-benchmark",
-			"path": "../sagellm-benchmark"
-		},
-		{
-			"name": "sagellm-docs",
-			"path": "../sagellm-docs"
-		},
-		{
 			"name": "neuromem",
 			"path": "../neuromem"
 		},
@@ -77,9 +37,6 @@
 			"path": "../sage-finetune"
 		},
 		{
-			"path": "../sagellm-control-plane-benchmark"
-		},
-		{
 			"path": "../sage-libs-intent"
 		},
 		{
@@ -87,6 +44,9 @@
 		},
 		{
 			"path": "../sage-pypi-publisher"
+		},
+		{
+			"path": "../sagellm-gateway"
 		}
 	],
 	"settings": {
@@ -160,6 +120,10 @@
 			"editor.formatOnSave": true
 		},
 		"ruff.configurationPreference": "filesystemFirst",
+		"cmake.configureOnOpen": false,
+		"cmake.autoSelectActiveFolder": false,
+		"cmake.useCMakePresets": "never",
+		"cmake.ignoreKitEnv": true,
 		"git.enableSmartCommit": true,
 		"git.confirmSync": false
 	},

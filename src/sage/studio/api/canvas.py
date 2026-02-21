@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sage.common.config.user_paths import get_user_data_dir as get_common_user_data_dir
+from sage.studio.services.file_upload_service import get_file_upload_service
 
 
 class CanvasGraphNodePayload(BaseModel):
@@ -206,6 +207,37 @@ def build_canvas_router() -> APIRouter:
             "message": "Flow 导入成功",
         }
 
+    @router.post("/api/pipeline/submit")
+    async def submit_pipeline(payload: dict[str, Any]):
+        pipeline_id = f"pipeline_{int(datetime.now().timestamp() * 1000)}"
+        file_path = get_user_pipelines_dir("1") / f"{pipeline_id}.json"
+        file_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {
+            "status": "success",
+            "message": "Pipeline submitted",
+            "pipeline_id": pipeline_id,
+            "file_path": str(file_path),
+        }
+
+    @router.post("/api/uploads")
+    async def upload_file(file: UploadFile = File(...)):
+        service = get_file_upload_service()
+        metadata = await service.upload_file(file.file, file.filename)
+        return metadata
+
+    @router.get("/api/uploads")
+    async def list_uploaded_files():
+        service = get_file_upload_service()
+        return service.list_files()
+
+    @router.delete("/api/uploads/{file_id}")
+    async def delete_uploaded_file(file_id: str):
+        service = get_file_upload_service()
+        success = service.delete_file(file_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="File not found")
+        return {"success": True}
+
     return router
 
 
@@ -214,6 +246,16 @@ def _data_root() -> Path:
     studio_dir = base_dir / "studio"
     studio_dir.mkdir(parents=True, exist_ok=True)
     return studio_dir
+
+
+def _get_sage_dir() -> Path:
+    return _data_root()
+
+
+def get_user_pipelines_dir(user_id: str) -> Path:
+    pipelines_dir = _get_sage_dir() / "users" / str(user_id) / "pipelines"
+    pipelines_dir.mkdir(parents=True, exist_ok=True)
+    return pipelines_dir
 
 
 def _get_pipelines_dir() -> Path:

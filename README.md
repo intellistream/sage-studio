@@ -83,7 +83,7 @@ cd sage-studio
 
 **脚本功能：**
 - ✅ 检查 Python/Node.js 环境
-- ✅ 创建/激活虚拟环境
+- ✅ 使用当前激活的 Python 环境安装依赖
 - ✅ 安装 Python 依赖（开发模式）
 - ✅ 安装前端依赖（npm）
 - ✅ 验证 SAGE 核心依赖
@@ -106,6 +106,14 @@ npm install
 # 验证安装
 python -c "from sage.studio.studio_manager import StudioManager; print('✓ Studio installed')"
 ```
+
+## 🧩 目录职责边界
+
+- `src/sage/studio/cli.py`: CLI 参数解析与调度入口
+- `src/sage/studio/chat_manager.py` / `studio_manager.py`: 对外管理器 facade
+- `src/sage/studio/application/`: 管理器实现层（`chat_manager.py`、`studio_manager.py`）
+- `src/sage/studio/supervisor/`: 进程、端口、健康检查、启动报告等编排组件
+- `src/sage/studio/frontend/src/services/api/`: 前端按领域拆分的 API 模块
 
 ## 📖 Quick Start
 
@@ -810,6 +818,22 @@ python -c "from sage.libs.io.source import FileSource; print('✓ libs OK')"
 
 ```bash
 # 检查 Flow 是否保存
+
+#### 5. Chat SSE 返回 `stream_timeout_waiting_for_runtime`
+
+首次冷启动（尤其是本地模型加载/Flownet 初始化）时，SSE 可能在较长时间内只有 keepalive。
+
+可通过环境变量放宽等待窗口（默认约 120 秒）：
+
+```bash
+export STUDIO_CHAT_SSE_MAX_KEEPALIVE_COUNT=18
+sage studio restart
+```
+
+说明：
+
+- `STUDIO_CHAT_SSE_MAX_KEEPALIVE_COUNT` × 10 秒（keepalive 间隔）≈ 最大等待时长
+- 该超时是显式错误提示，不会回退到 mock 响应
 ls ~/.sage/pipelines/
 
 # 检查后端 API

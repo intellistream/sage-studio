@@ -11,6 +11,7 @@ from sage.studio.runtime.endpoints.registry import get_endpoint_registry
 _BOOTSTRAP_LOCK = threading.Lock()
 _BOOTSTRAPPED = False
 _GATEWAY_BOOTSTRAPPED = False
+_LOCAL_LLM_BOOTSTRAPPED = False
 
 # Heuristics for identifying embedding / non-chat models by name
 _EMBEDDING_KEYWORDS = ("bge-", "bge_", "embed", "text-embedding", "e5-", "m3e-", "gte-")
@@ -59,18 +60,22 @@ def bootstrap_gateway_endpoint_from_env() -> None:
 
     Uses a synchronous HTTP call so it can be invoked from worker threads.
     Embedding-only models (bge-*, embed*, etc.) are excluded.
-    Uses the placeholder key ``sk-local`` so the inference guard allows the call.
+    Uses a local synthetic token ``sk-local`` so unified auth handling can stay consistent.
     """
     global _GATEWAY_BOOTSTRAPPED
 
     with _BOOTSTRAP_LOCK:
-        if _GATEWAY_BOOTSTRAPPED:
-            return
-        _GATEWAY_BOOTSTRAPPED = True
-
         host = os.environ.get("SAGE_GATEWAY_HOST", "localhost")
         port = os.environ.get("SAGE_GATEWAY_PORT", "8889")
         gateway_base = f"http://{host}:{port}"
+
+        if _GATEWAY_BOOTSTRAPPED:
+            # Already bootstrapped successfully — but verify the endpoint still exists
+            registry = get_endpoint_registry()
+            existing = registry.get_endpoint("ep-sage-gateway-local")
+            if existing is not None:
+                return
+            # Endpoint was removed or never registered — re-probe
 
         # Synchronous probe — must not use asyncio here (called from thread worker)
         try:
@@ -92,6 +97,7 @@ def bootstrap_gateway_endpoint_from_env() -> None:
         )
 
         if not chat_model_ids:
+            # No chat models found — do NOT set _GATEWAY_BOOTSTRAPPED so we retry next time
             return
 
         registry = get_endpoint_registry()
@@ -99,7 +105,8 @@ def bootstrap_gateway_endpoint_from_env() -> None:
 
         existing = registry.get_endpoint(endpoint_id)
         if existing is not None:
-            # Already registered — nothing more to do (model list is stable)
+            # Already registered — mark bootstrapped
+            _GATEWAY_BOOTSTRAPPED = True
             return
 
         has_existing = bool(registry.list_endpoints())
@@ -112,7 +119,60 @@ def bootstrap_gateway_endpoint_from_env() -> None:
                 model_ids=chat_model_ids,
                 enabled=True,
                 is_default=(not has_existing),
-                api_key="sk-local",  # placeholder — gateway does not require auth
+                api_key="sk-local",  # local synthetic token for unified auth handling
+            )
+        )
+        _GATEWAY_BOOTSTRAPPED = True
+
+
+def bootstrap_local_llm_endpoint_from_env() -> None:
+    """Probe local LLM engine and register a direct endpoint for matched model.
+
+    This bypasses gateway/control-plane request timeout behavior when local engine
+    is healthy and directly serves OpenAI-compatible chat completions.
+    """
+    global _LOCAL_LLM_BOOTSTRAPPED
+
+    with _BOOTSTRAP_LOCK:
+        if _LOCAL_LLM_BOOTSTRAPPED:
+            return
+        _LOCAL_LLM_BOOTSTRAPPED = True
+
+        host = os.environ.get("SAGE_LLM_HOST", "127.0.0.1")
+        port = os.environ.get("SAGE_LLM_PORT", "8901")
+        base = f"http://{host}:{port}"
+        model_id = os.environ.get("SAGE_STUDIO_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct").strip()
+        if not model_id:
+            return
+
+        try:
+            req = urllib.request.Request(
+                f"{base}/health",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=2):
+                pass
+        except Exception:
+            return
+
+        registry = get_endpoint_registry()
+        endpoint_id = "ep-local-llm-engine"
+
+        existing = registry.get_endpoint(endpoint_id)
+        if existing is not None:
+            return
+
+        has_existing = bool(registry.list_endpoints())
+        registry.create_endpoint(
+            EndpointCreate(
+                endpoint_id=endpoint_id,
+                provider=EndpointProvider.OPENAI_COMPATIBLE,
+                display_name="SAGE Local LLM Engine",
+                base_url=f"{base}/v1",
+                model_ids=(model_id,),
+                enabled=True,
+                is_default=(not has_existing),
+                api_key="sk-local",
             )
         )
 
@@ -124,10 +184,11 @@ def _is_embedding_model(model_id: str) -> bool:
 
 
 def reset_endpoint_bootstrap_state() -> None:
-    global _BOOTSTRAPPED, _GATEWAY_BOOTSTRAPPED
+    global _BOOTSTRAPPED, _GATEWAY_BOOTSTRAPPED, _LOCAL_LLM_BOOTSTRAPPED
     with _BOOTSTRAP_LOCK:
         _BOOTSTRAPPED = False
         _GATEWAY_BOOTSTRAPPED = False
+        _LOCAL_LLM_BOOTSTRAPPED = False
 
 
 def _resolve_dashscope_api_key() -> str | None:
@@ -154,6 +215,7 @@ def _resolve_dashscope_api_key() -> str | None:
 
 __all__ = [
     "bootstrap_dashscope_endpoint_from_env",
+    "bootstrap_local_llm_endpoint_from_env",
     "bootstrap_gateway_endpoint_from_env",
     "reset_endpoint_bootstrap_state",
 ]

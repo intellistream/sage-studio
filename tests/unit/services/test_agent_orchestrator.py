@@ -67,7 +67,7 @@ async def test_call_gateway_chat_uses_resolved_base(monkeypatch):
     orch = AgentOrchestrator()
     orch._resolve_gateway_base_url = MagicMock(return_value="http://example.com")
 
-    async def _fake_post(url, json):
+    async def _fake_post(self, url, json=None, **kwargs):
         class _Resp:
             status_code = 200
 
@@ -75,7 +75,7 @@ async def test_call_gateway_chat_uses_resolved_base(monkeypatch):
                 return {"choices": [{"message": {"content": "hi"}}]}
 
         _fake_post.called_url = url
-        _fake_post.called_json = json
+        _fake_post.called_json = json if json is not None else kwargs.get("json")
         return _Resp()
 
     class _Client:

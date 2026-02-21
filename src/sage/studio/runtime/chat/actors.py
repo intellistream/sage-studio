@@ -105,36 +105,34 @@ class GenerateAIResponse:
         model = cast(str, payload.get("model", ""))
         run_id = cast(str, payload.get("run_id", "unknown"))
         request_id = cast(str, payload.get("request_id", "unknown"))
-        session_state = payload.get("session_state")
-        if not isinstance(session_state, dict):
-            session_state = {}
-        turn_count = int(session_state.get("turn_count", 0))
+
         resolved = resolve_endpoint_for_model(model)
-        route_note = _format_route_note(model=model, resolved=resolved)
+        if resolved is None:
+            raise RuntimeError(
+                f"no_endpoint_configured: no LLM endpoint available for model={model!r}. "
+                "Start an engine with: sage llm engine start <model>"
+            )
+        if not resolved.matched_model:
+            raise RuntimeError(
+                f"model_not_registered: model={model!r} is not registered in endpoint={resolved.endpoint_id!r}"
+            )
 
-        if message == "__raise__":
-            raise RuntimeError("placeholder model execution failed.")
+        response_text = _call_inference(endpoint=resolved, message=message)
 
-        response_text = _generate_response_text(
-            message=message,
-            turn_count=turn_count,
-            resolved=resolved,
-        )
+        # Guard against empty/whitespace-only responses from small models
+        if not response_text or not response_text.strip():
+            response_text = (
+                "(The model returned an empty response. "
+                "This may happen with small models. Please try rephrasing your question.)"
+            )
 
         return [
             StageEvent(
                 run_id=run_id,
                 request_id=request_id,
-                stage="chat.generation.started",
-                state=StageEventState.RUNNING,
-                message=f"placeholder generation started ({route_note})",
-            ),
-            StageEvent(
-                run_id=run_id,
-                request_id=request_id,
                 stage="chat.generation.succeeded",
                 state=StageEventState.SUCCEEDED,
-                message=f"{response_text} ({route_note})",
+                message=response_text,
             ),
         ]
 
@@ -173,33 +171,26 @@ def _extract_field(payload: Any, field: str, *, fallback: str) -> str:
     return fallback
 
 
-def _format_route_note(*, model: str, resolved: ResolvedEndpoint | None) -> str:
-    normalized_model = model.strip() or "unknown-model"
-    if resolved is None:
-        return f"model={normalized_model},endpoint=unresolved"
-    return (
-        f"model={normalized_model},endpoint={resolved.endpoint_id},provider={resolved.provider}"
-    )
-
-
-def _generate_response_text(*, message: str, turn_count: int, resolved: ResolvedEndpoint | None) -> str:
-    if resolved is None:
-        return f"placeholder response(turn={turn_count}): {message}"
-    if not _supports_live_inference(resolved):
-        return f"placeholder response(turn={turn_count}): {message}"
-
+def _call_inference(*, endpoint: ResolvedEndpoint, message: str) -> str:
+    """Call the LLM endpoint synchronously. Raises RuntimeError on failure."""
+    if endpoint.provider not in {
+        "alibaba_dashscope",
+        "openai_compatible",
+        "openrouter",
+        "groq",
+        "openai",
+    }:
+        raise RuntimeError(
+            f"provider_not_supported: provider={endpoint.provider!r} endpoint={endpoint.endpoint_id!r}"
+        )
+    if not endpoint.api_key:
+        raise RuntimeError(
+            f"endpoint_missing_api_key: endpoint={endpoint.endpoint_id!r} has no API key configured"
+        )
     try:
-        return request_chat_completion(endpoint=resolved, message=message)
+        return request_chat_completion(endpoint=endpoint, message=message)
     except InferenceCallError as exc:
-        raise RuntimeError(f"provider_call_failed:{exc}") from exc
-
-
-def _supports_live_inference(resolved: ResolvedEndpoint) -> bool:
-    if not resolved.api_key:
-        return False
-    if not resolved.matched_model:
-        return False
-    return resolved.provider in {"alibaba_dashscope", "openai_compatible", "openrouter", "groq", "openai"}
+        raise RuntimeError(f"provider_call_failed: {exc}") from exc
 
 
 __all__ = [
