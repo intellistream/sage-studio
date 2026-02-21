@@ -55,6 +55,15 @@ class SelectModelRequest(BaseModel):
 
 _selected: dict[str, str] = {}  # keys: "model_name", "base_url"
 
+# Embedding-model name keywords — kept in sync with bootstrap.py
+_EMBEDDING_KEYWORDS = ("bge-", "bge_", "embed", "text-embedding", "e5-", "m3e-", "gte-")
+
+
+def _is_embedding_model(model_id: str) -> bool:
+    """Return True if the model name looks like an embedding / non-chat model."""
+    lower = model_id.lower()
+    return any(kw in lower for kw in _EMBEDDING_KEYWORDS)
+
 
 def _get_gateway_url() -> str:
     host = os.environ.get("SAGE_GATEWAY_HOST", "localhost")
@@ -98,22 +107,38 @@ def build_llm_router() -> APIRouter:
 
         # Gateway is reachable — parse /v1/models response (OpenAI format)
         raw_models: list[dict[str, Any]] = models_data.get("data", [])
-        available: list[AvailableModel] = []
+
+        # Separate chat models from embedding models for display
+        all_models: list[AvailableModel] = []
+        chat_model_names: list[str] = []
         for m in raw_models:
             model_id: str = m.get("id", "")
-            if model_id:
-                available.append(
-                    AvailableModel(
-                        name=model_id,
-                        base_url=f"{gateway_url}/v1",
-                        is_local=True,
-                        healthy=True,
-                        engine_type="gateway",
-                    )
+            if not model_id:
+                continue
+            is_embed = _is_embedding_model(model_id)
+            all_models.append(
+                AvailableModel(
+                    name=model_id,
+                    base_url=f"{gateway_url}/v1",
+                    is_local=True,
+                    healthy=True,
+                    engine_type="embedding" if is_embed else "gateway",
+                    description="Embedding model" if is_embed else None,
                 )
+            )
+            if not is_embed:
+                chat_model_names.append(model_id)
 
-        # Determine currently active model
-        active_model = _selected.get("model_name") or (available[0].name if available else None)
+        # Show all models in UI, but default to a chat model
+        available = all_models
+
+        # Determine currently active model — prefer an explicitly selected chat model
+        active_model = _selected.get("model_name")
+        if not active_model:
+            # Default to first chat model; fall back to first model if only embedding engines running
+            active_model = (chat_model_names[0] if chat_model_names else None) or (
+                available[0].name if available else None
+            )
         active_base_url = _selected.get("base_url") or (f"{gateway_url}/v1" if available else None)
 
         return LLMStatusResponse(
