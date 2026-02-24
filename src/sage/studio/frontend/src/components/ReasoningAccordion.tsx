@@ -359,24 +359,9 @@ export default function ReasoningAccordion({
     defaultExpanded,
     className = '',
 }: ReasoningAccordionProps) {
-    const [expanded, setExpanded] = useState(defaultExpanded ?? isStreaming)
-
-    // 流式传输结束后自动折叠
-    useEffect(() => {
-        if (!isStreaming && steps.length > 0) {
-            const timer = setTimeout(() => {
-                setExpanded(false)
-            }, 800)
-            return () => clearTimeout(timer)
-        }
-    }, [isStreaming, steps.length])
-
-    // 开始流式传输时自动展开
-    useEffect(() => {
-        if (isStreaming) {
-            setExpanded(true)
-        }
-    }, [isStreaming])
+    // ChatGPT 风格：默认折叠，用户点击后再展开。
+    // 仅当外部显式传入 defaultExpanded=true 时，初始为展开。
+    const [expanded, setExpanded] = useState(defaultExpanded ?? false)
 
     if (steps.length === 0) {
         return null
