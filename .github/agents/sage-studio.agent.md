@@ -13,6 +13,7 @@ tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo', '
 ## Rules
 - Keep env-driven ports and startup behavior intact.
 - No new `ray` dependencies; align with Flownet ecosystem.
+- Do not create new local virtual environments (`venv`/`.venv`); use the existing configured Python environment.
 - Avoid compatibility shims; update call sites directly.
 - Preserve `sage studio start|stop|status|logs` user behavior.
 
