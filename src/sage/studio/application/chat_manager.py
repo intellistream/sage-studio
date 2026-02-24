@@ -149,9 +149,9 @@ class ChatModeManager(StudioManager):
 
             from sage.studio.config.ports import StudioPorts
 
-            # Use subprocess to start sageLLM engine with the finetuned model
+            # Use subprocess to start sageLLM full-stack (Gateway + Engine)
             serve_cmd = [
-                "sage-llm", "serve-engine",
+                "sage-llm", "serve",
                 "--model", model_path,
                 "--port", str(StudioPorts.LLM_DEFAULT),
             ]
@@ -505,8 +505,9 @@ class ChatModeManager(StudioManager):
     def _start_llm_service(self, model: str | None = None, use_finetuned: bool = False) -> bool:
         """Start local LLM service via sageLLM.
 
-        Uses sageLLM CLI (sage-llm serve-engine) to start a local LLM HTTP server.
-        The server provides OpenAI-compatible API at http://127.0.0.1:{port}/v1
+        Uses sageLLM CLI (sage-llm serve) to start the full sageLLM stack
+        (Gateway + Control Plane + Engine). The Gateway provides an
+        OpenAI-compatible API at http://127.0.0.1:{port}/v1
 
         If an LLM service is already running at known ports, it will be reused
         instead of starting a new one.
@@ -558,7 +559,7 @@ class ChatModeManager(StudioManager):
         llm_log = log_dir / "llm_engine.log"
 
         serve_cmd = [
-            "sage-llm", "serve-engine",
+            "sage-llm", "serve",
             "--model", model_name,
             "--port", str(self.llm_port),
         ]
@@ -1494,10 +1495,12 @@ class ChatModeManager(StudioManager):
 
                 try:
                     llm_log = log_dir / f"llm_engine_{next_port}.log"
+                    engine_port = next_port + 1  # sagellm 内部引擎端口 (gateway+1)
                     serve_cmd = [
-                        "sage-llm", "serve-engine",
+                        "sage-llm", "serve",
                         "--model", model_name,
                         "--port", str(next_port),
+                        "--engine-port", str(engine_port),
                     ]
                     log_handle = open(llm_log, "w")
                     proc = subprocess.Popen(
@@ -1515,8 +1518,9 @@ class ChatModeManager(StudioManager):
                         # Update virtual free memory for the target GPU
                         target_gpu["free"] -= required_mem
                         used_ports.add(next_port)
+                        used_ports.add(engine_port)  # 同时占用内部引擎端口
                         started_count += 1
-                        current_port = next_port + 1
+                        current_port = next_port + 2  # 跳过 gateway port + engine port
 
                         if self.llm_service is None:
                             self.llm_service = proc
