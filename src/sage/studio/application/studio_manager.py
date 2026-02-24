@@ -1956,6 +1956,9 @@ if __name__ == "__main__":
         config.update({"port": port, "host": host, "dev_mode": dev})
         self.save_config(config)
 
+        # 从配置读取当前后端端口（start_backend 可能在端口冲突时自动改写配置）
+        effective_backend_port = int(config.get("backend_port", self.backend_port))
+
         console.print(f"[blue]启动 Studio前端 在 {host}:{port}[/blue]")
 
         try:
@@ -2026,6 +2029,9 @@ if __name__ == "__main__":
             # 准备环境变量
             env = os.environ.copy()
             env["npm_config_cache"] = str(self.npm_cache_dir)
+            # 传递后端端口给 Vite proxy（开发模式下 /api 需要）
+            env["VITE_BACKEND_PORT"] = str(effective_backend_port)
+            env["STUDIO_BACKEND_PORT"] = str(effective_backend_port)
             # 传递 Gateway 端口给 Vite (用于 proxy target)
             env["VITE_GATEWAY_PORT"] = str(self.gateway_port)
             # 传递 PORT 给 Vite (虽然 CLI 参数也会覆盖，但保持一致更好)
