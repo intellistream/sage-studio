@@ -6,11 +6,11 @@
         "default": true
     },
     {
-        "name": "BAAI/bge-small-zh-v1.5",
+        "name": "BAAI/bge-large-zh-v1.5",
         "engine_kind": "embedding",
         "is_local": true,
         "default": true,
-        "description": "CPU-friendly embedding (512d)",
-        "dim": 512
+        "description": "Large Chinese embedding (1024d)",
+        "dim": 1024
     }
 ]
