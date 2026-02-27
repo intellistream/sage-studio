@@ -141,9 +141,6 @@ def bootstrap_local_llm_endpoint_from_env() -> None:
         host = os.environ.get("SAGE_LLM_HOST", "127.0.0.1")
         port = os.environ.get("SAGE_LLM_PORT", "8901")
         base = f"http://{host}:{port}"
-        model_id = os.environ.get("SAGE_STUDIO_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct").strip()
-        if not model_id:
-            return
 
         try:
             req = urllib.request.Request(
@@ -154,6 +151,30 @@ def bootstrap_local_llm_endpoint_from_env() -> None:
                 pass
         except Exception:
             return
+
+        # Discover the actual chat model IDs by probing /v1/models.
+        # Fall back to SAGE_STUDIO_LLM_MODEL env var if the endpoint is absent.
+        discovered_model_ids: tuple[str, ...] = ()
+        try:
+            models_req = urllib.request.Request(
+                f"{base}/v1/models",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(models_req, timeout=2) as resp:
+                models_data = json.loads(resp.read())
+            discovered_model_ids = tuple(
+                m["id"]
+                for m in models_data.get("data", [])
+                if m.get("id") and not _is_embedding_model(m["id"])
+            )
+        except Exception:
+            pass
+
+        if not discovered_model_ids:
+            fallback = os.environ.get("SAGE_STUDIO_LLM_MODEL", "").strip()
+            if not fallback:
+                return
+            discovered_model_ids = (fallback,)
 
         registry = get_endpoint_registry()
         endpoint_id = "ep-local-llm-engine"
@@ -169,7 +190,7 @@ def bootstrap_local_llm_endpoint_from_env() -> None:
                 provider=EndpointProvider.OPENAI_COMPATIBLE,
                 display_name="SAGE Local LLM Engine",
                 base_url=f"{base}/v1",
-                model_ids=(model_id,),
+                model_ids=discovered_model_ids,
                 enabled=True,
                 is_default=(not has_existing),
                 api_key="sk-local",
