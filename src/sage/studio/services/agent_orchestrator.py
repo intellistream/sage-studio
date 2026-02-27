@@ -27,6 +27,7 @@ from sage_libs.sage_agentic.workflows.router import (
 from sage.studio.models.agent_step import (
     AgentStep,
 )
+from sage.studio.services.agents.coding import CodingAgent
 from sage.studio.services.agents.researcher import ResearcherAgent
 from sage.studio.services.knowledge_manager import KnowledgeManager
 from sage.studio.services.memory_integration import get_memory_service
@@ -73,6 +74,9 @@ class AgentOrchestrator:
         # Pass all available tools to the researcher agent
         self.researcher_agent = ResearcherAgent(self.tools.list_tools())
 
+        # Coding tools (L6 FS infra) — stored for per-request CodingAgent construction
+        self._code_tools = self._build_code_tools()
+
     def _register_builtin_tools(self):
         """注册内置工具"""
         try:
@@ -87,6 +91,16 @@ class AgentOrchestrator:
             self.tools.register(NatureNewsTool())
         except ImportError as e:
             logger.warning(f"Builtin tools not found or failed to load: {e}")
+
+    def _build_code_tools(self) -> list:
+        """Build the FS tools passed to CodingAgent/CoderBot at request time."""
+        try:
+            from sage.studio.tools.code_writing import FileWriteTool, FileReadTool, ListDirectoryTool
+
+            return [FileWriteTool(), FileReadTool(), ListDirectoryTool()]
+        except ImportError as exc:
+            logger.warning("code_writing tools unavailable: %s", exc)
+            return []
 
     def _make_step(
         self, type: str, content: str, status: str = "completed", **metadata
@@ -159,7 +173,7 @@ class AgentOrchestrator:
             )
             return
 
-        if decision.route in {WorkflowRoute.AGENTIC, WorkflowRoute.CODE}:
+        if decision.route == WorkflowRoute.AGENTIC:
             async for chunk in self._run_agentic(message, session_id, history, decision):
                 yield chunk
             route_duration = time.perf_counter() - route_started_at
@@ -170,6 +184,20 @@ class AgentOrchestrator:
                     "intent": decision.intent.value,
                     "duration_ms": int(route_duration * 1000),
                     "should_index": decision.should_index,
+                },
+            )
+            return
+
+        if decision.route == WorkflowRoute.CODE:
+            async for chunk in self._run_coding(message, session_id, decision):
+                yield chunk
+            route_duration = time.perf_counter() - route_started_at
+            logger.info(
+                "route completed",
+                extra={
+                    "route": decision.route.value,
+                    "intent": decision.intent.value,
+                    "duration_ms": int(route_duration * 1000),
                 },
             )
             return
@@ -291,6 +319,55 @@ class AgentOrchestrator:
             yield self._make_step("response", "回复完成", status="completed")
         else:
             yield "(LLM returned empty response. The model may not be loaded yet.)"
+
+    async def _raw_gateway_call(self, messages: list[dict], session_id: str = "") -> str:
+        """Low-level gateway call: takes a full messages list, returns completion text.
+
+        Used as the injected ``llm_callable`` for CoderBot so the bot stays L3-neutral.
+        """
+        base_url = self._resolve_gateway_base_url()
+        try:
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
+                resp = await client.post(
+                    f"{base_url}/v1/chat/completions",
+                    json={"model": "sage-default", "messages": messages, "stream": False,
+                          "session_id": session_id},
+                )
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"Cannot connect to LLM Gateway at {base_url}. "
+                "Please ensure the gateway is running (sage gateway start)."
+            )
+        except httpx.TimeoutException:
+            raise RuntimeError("LLM Gateway timed out (120s).")
+        if resp.status_code != 200:
+            raise RuntimeError(f"LLM Gateway error ({resp.status_code}): {resp.text[:200]}")
+        data = resp.json()
+        return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+    async def _run_coding(
+        self,
+        message: str,
+        session_id: str,
+        decision: WorkflowDecision,
+    ) -> AsyncGenerator[AgentStep | str, None]:
+        """Route CODE intent to CodingAgent backed by CoderBot (L3)."""
+        import functools
+
+        # Build per-request llm_callable with session_id baked in
+        llm_callable = functools.partial(self._raw_gateway_call, session_id=session_id)
+
+        agent = CodingAgent(tools=self._code_tools, llm_callable=llm_callable)
+        memory_service = get_memory_service(session_id)
+        full_response = ""
+
+        async for item in agent.run(message):
+            if isinstance(item, str):
+                full_response += item
+            yield item
+
+        if full_response:
+            await memory_service.add_interaction(message, full_response)
 
     async def _run_agentic(
         self,
