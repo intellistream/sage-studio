@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from sage.studio.api.chat_sse import ChatSSEStreamAdapter
-from sage.studio.api.llm import _get_gateway_url, _is_embedding_model, _selected
+from sage.studio.api.llm import _get_gateway_url, _is_embedding_model, _pick_active_chat_model, _selected
 from sage.studio.contracts.models import RunKind, RunRef
 
 
@@ -179,10 +179,14 @@ def _auto_resolve_chat_model() -> str:
         )
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read())
+        chat_models: list[str] = []
         for m in data.get("data", []):
             model_id = m.get("id", "")
             if model_id and not _is_embedding_model(model_id):
-                return model_id
+                chat_models.append(model_id)
+        picked = _pick_active_chat_model(chat_models)
+        if picked:
+            return picked
     except Exception:
         pass
     return ""

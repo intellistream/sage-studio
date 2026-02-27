@@ -566,12 +566,17 @@ class ChatModeManager(StudioManager):
 
         try:
             log_handle = open(llm_log, "w")
+            child_env = os.environ.copy()
+            child_env["SAGELLM_PREFLIGHT_CANARY"] = "0"
+            child_env["SAGELLM_STARTUP_CANARY"] = "0"
+            child_env["SAGELLM_PERIODIC_CANARY"] = "0"
             proc = subprocess.Popen(
                 serve_cmd,
                 stdin=subprocess.DEVNULL,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                env=child_env,
             )
 
             # Save PID for later management
@@ -1258,20 +1263,41 @@ class ChatModeManager(StudioManager):
         # Scan the LLM port range for running engines
         llm_ports_to_check = list(range(StudioPorts.BENCHMARK_LLM, StudioPorts.BENCHMARK_LLM + 10))
         llm_ports_to_check.append(StudioPorts.LLM_DEFAULT)  # 8001
+        registered_llm_count = 0
         for port in llm_ports_to_check:
             health_url = f"http://127.0.0.1:{port}/health"
             try:
                 resp = requests.get(health_url, timeout=2)
                 if resp.status_code == 200:
-                    # Determine model name from health or info endpoint
-                    model_name = self._last_model_name or self.llm_model
+                    # Must be a real engine endpoint (gateway-only ports expose /health too).
+                    model_name = ""
                     try:
                         info_resp = requests.get(f"http://127.0.0.1:{port}/info", timeout=2)
-                        if info_resp.status_code == 200:
-                            info = info_resp.json()
-                            model_name = info.get("model", model_name)
+                        if info_resp.status_code != 200:
+                            continue
+                        info = info_resp.json()
+                        model_name = str(info.get("model", "")).strip()
                     except Exception:
-                        pass
+                        continue
+
+                    if not model_name:
+                        continue
+
+                    try:
+                        probe_resp = requests.post(
+                            f"http://127.0.0.1:{port}/v1/completions",
+                            json={
+                                "model": model_name,
+                                "prompt": "health_check",
+                                "max_tokens": 1,
+                                "stream": False,
+                            },
+                            timeout=3,
+                        )
+                        if probe_resp.status_code == 404:
+                            continue
+                    except Exception:
+                        continue
 
                     engine_id = f"engine-llm-{port}"
                     # Unregister first to handle restart (ignore 404)
@@ -1290,6 +1316,7 @@ class ChatModeManager(StudioManager):
                     try:
                         r = requests.post(register_url, json=payload, timeout=5)
                         if r.status_code == 200:
+                            registered_llm_count += 1
                             console.print(
                                 f"[green]✅ 已注册 LLM 引擎到 Gateway: {model_name} @ :{port}[/green]"
                             )
@@ -1301,6 +1328,11 @@ class ChatModeManager(StudioManager):
                         console.print(f"[yellow]⚠️  注册 LLM 引擎异常 (:{port}): {e}[/yellow]")
             except requests.RequestException:
                 pass
+
+        if registered_llm_count == 0:
+            console.print(
+                "[yellow]⚠️  未发现可注册的 LLM 引擎端口（已跳过网关端口）。请检查模型引擎是否真正启动。[/yellow]"
+            )
 
         # --- Register Embedding engine ---
         embed_port = StudioPorts.EMBEDDING_DEFAULT
@@ -1503,12 +1535,17 @@ class ChatModeManager(StudioManager):
                         "--engine-port", str(engine_port),
                     ]
                     log_handle = open(llm_log, "w")
+                    child_env = os.environ.copy()
+                    child_env["SAGELLM_PREFLIGHT_CANARY"] = "0"
+                    child_env["SAGELLM_STARTUP_CANARY"] = "0"
+                    child_env["SAGELLM_PERIODIC_CANARY"] = "0"
                     proc = subprocess.Popen(
                         serve_cmd,
                         stdin=subprocess.DEVNULL,
                         stdout=log_handle,
                         stderr=subprocess.STDOUT,
                         start_new_session=True,
+                        env=child_env,
                     )
 
                     # Wait briefly to check if process started

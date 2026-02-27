@@ -136,6 +136,7 @@ function ModelSelector({
     onSelectModel: (modelName: string, baseUrl: string) => void
 }) {
     const allModels = llmStatus?.available_models || []
+    const embeddingModels = llmStatus?.embedding_models || []
     const chatModels = allModels.filter(model => model.engine_type !== 'embedding')
     const selectableModels = chatModels.length > 0 ? chatModels : allModels
 
@@ -160,7 +161,7 @@ function ModelSelector({
         }
     }
 
-    const items = selectableModels.map(model => {
+    const chatModelItems = selectableModels.map(model => {
         const isSelected = model.name === currentModelName
 
         return {
@@ -194,25 +195,62 @@ function ModelSelector({
                             )}
                         </div>
                     </div>
-                    {/* Status Indicator */}
                     <div className={`w-2 h-2 rounded-full ml-3 flex-shrink-0 ${model.healthy ? 'bg-green-500' : 'bg-red-400'}`} title={model.healthy ? 'Running' : 'Stopped/Unreachable'} />
                 </div>
             ),
         }
-    }) || [
+    })
+
+    const embeddingItems = embeddingModels.map(model => ({
+        key: `embed__${model.name}`,
+        disabled: true,
+        label: (
+            <div className="py-1 flex items-center justify-between min-w-[280px] opacity-80">
+                <div className="flex-1">
+                    <div className="font-medium text-[--gemini-text-secondary] flex items-center gap-2">
+                        {model.name}
+                        <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 rounded">embedding</span>
+                    </div>
+                    <div className="text-xs text-[--gemini-text-secondary]">
+                        {model.is_local ? 'Local Embedding Model' : 'Cloud Embedding Model'}
+                    </div>
+                </div>
+                <div className={`w-2 h-2 rounded-full ml-3 flex-shrink-0 ${model.healthy ? 'bg-green-500' : 'bg-red-400'}`} title={model.healthy ? 'Running' : 'Stopped/Unreachable'} />
+            </div>
+        ),
+    }))
+
+    const fallbackItem = [
+        {
+            key: 'current',
+            label: (
+                <div className="py-1">
+                    <div className="font-medium">{modelName}</div>
+                    <div className="text-xs text-[--gemini-text-secondary]">
+                        {(isGatewayService ? 'sageLLM Gateway' : (isLocal ? 'Local Model' : 'Cloud Model'))} · {connectionLabel}
+                    </div>
+                </div>
+            ),
+            disabled: true,
+        },
+    ]
+
+    const items = [
+        ...(chatModelItems.length > 0 ? chatModelItems : fallbackItem),
+        ...(embeddingModels.length > 0 ? [
+            { type: 'divider' as const },
             {
-                key: 'current',
+                key: '__embed_header__',
+                disabled: true,
                 label: (
-                    <div className="py-1">
-                        <div className="font-medium">{modelName}</div>
-                        <div className="text-xs text-[--gemini-text-secondary]">
-                            {(isGatewayService ? 'sageLLM Gateway' : (isLocal ? 'Local Model' : 'Cloud Model'))} · {connectionLabel}
-                        </div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-[--gemini-text-secondary] px-1 py-0.5">
+                        Embedding Models
                     </div>
                 ),
-                disabled: true,
             },
-        ]
+            ...embeddingItems,
+        ] : []),
+    ]
 
     return (
         <Dropdown

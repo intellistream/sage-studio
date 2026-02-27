@@ -41,6 +41,7 @@ class LLMStatusResponse(BaseModel):
     base_url: str | None = None
     is_local: bool = False
     available_models: list[AvailableModel] = []
+    embedding_models: list[AvailableModel] = []
     error: str | None = None
 
 
@@ -57,6 +58,7 @@ _selected: dict[str, str] = {}  # keys: "model_name", "base_url"
 
 # Embedding-model name keywords — kept in sync with bootstrap.py
 _EMBEDDING_KEYWORDS = ("bge-", "bge_", "embed", "text-embedding", "e5-", "m3e-", "gte-")
+_DEFAULT_CHAT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 
 
 def _is_embedding_model(model_id: str) -> bool:
@@ -71,6 +73,26 @@ def _get_gateway_url() -> str:
     return f"http://{host}:{port}"
 
 
+def _preferred_chat_model_name() -> str:
+    configured = os.environ.get("SAGE_DEFAULT_MODEL", _DEFAULT_CHAT_MODEL).strip()
+    return configured or _DEFAULT_CHAT_MODEL
+
+
+def _pick_active_chat_model(chat_model_names: list[str]) -> str | None:
+    if not chat_model_names:
+        return None
+
+    selected = _selected.get("model_name", "").strip()
+    if selected and selected in chat_model_names and not _is_embedding_model(selected):
+        return selected
+
+    preferred = _preferred_chat_model_name()
+    if preferred in chat_model_names:
+        return preferred
+
+    return chat_model_names[0]
+
+
 async def _probe_gateway(gateway_url: str) -> dict[str, Any] | None:
     """Try to reach the Gateway's /v1/models or /health endpoint."""
     try:
@@ -81,6 +103,65 @@ async def _probe_gateway(gateway_url: str) -> dict[str, Any] | None:
     except Exception:
         pass
     return None
+
+
+async def _try_auto_register_local_llm_engines(gateway_url: str) -> bool:
+    """Best-effort: register healthy local LLM engines into Gateway control plane.
+
+    Returns True if at least one registration call succeeded.
+    """
+    candidate_ports = [*range(8901, 8911), 8001]
+    register_url = f"{gateway_url}/v1/management/engines/register"
+    any_registered = False
+
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        for port in candidate_ports:
+            try:
+                health = await client.get(f"http://127.0.0.1:{port}/health")
+                if health.status_code != 200:
+                    continue
+            except Exception:
+                continue
+
+            model_name: str | None = None
+            try:
+                models_resp = await client.get(f"http://127.0.0.1:{port}/v1/models")
+                if models_resp.status_code == 200:
+                    data = models_resp.json()
+                    models = data.get("data", []) if isinstance(data, dict) else []
+                    if models:
+                        model_name = models[0].get("id")
+            except Exception:
+                pass
+
+            if not model_name:
+                try:
+                    info_resp = await client.get(f"http://127.0.0.1:{port}/info")
+                    if info_resp.status_code == 200:
+                        info = info_resp.json()
+                        if isinstance(info, dict):
+                            model_name = info.get("model")
+                except Exception:
+                    pass
+
+            if not model_name:
+                continue
+
+            payload = {
+                "engine_id": f"engine-llm-{port}",
+                "model_id": model_name,
+                "host": "127.0.0.1",
+                "port": port,
+                "engine_kind": "llm",
+            }
+            try:
+                register_resp = await client.post(register_url, json=payload)
+                if register_resp.status_code in (200, 201):
+                    any_registered = True
+            except Exception:
+                pass
+
+    return any_registered
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +189,16 @@ def build_llm_router() -> APIRouter:
         # Gateway is reachable — parse /v1/models response (OpenAI format)
         raw_models: list[dict[str, Any]] = models_data.get("data", [])
 
+        # If only embedding/no chat models are visible, try a one-shot local auto-registration.
+        if not any(
+            (m.get("id") and not _is_embedding_model(m.get("id", "")))
+            for m in raw_models
+        ):
+            if await _try_auto_register_local_llm_engines(gateway_url):
+                refreshed = await _probe_gateway(gateway_url)
+                if refreshed is not None:
+                    raw_models = refreshed.get("data", [])
+
         # Separate chat models from embedding models for display
         all_models: list[AvailableModel] = []
         chat_model_names: list[str] = []
@@ -129,16 +220,12 @@ def build_llm_router() -> APIRouter:
             if not is_embed:
                 chat_model_names.append(model_id)
 
-        # Show all models in UI, but default to a chat model
-        available = all_models
+        # Separate chat models from embedding models in response
+        available = [m for m in all_models if m.engine_type != "embedding"]
+        embedding_models_list = [m for m in all_models if m.engine_type == "embedding"]
 
         # Determine currently active model — prefer an explicitly selected chat model
-        active_model = _selected.get("model_name")
-        if not active_model:
-            # Default to first chat model; fall back to first model if only embedding engines running
-            active_model = (chat_model_names[0] if chat_model_names else None) or (
-                available[0].name if available else None
-            )
+        active_model = _pick_active_chat_model(chat_model_names)
         active_base_url = _selected.get("base_url") or (f"{gateway_url}/v1" if available else None)
 
         return LLMStatusResponse(
@@ -149,6 +236,7 @@ def build_llm_router() -> APIRouter:
             base_url=active_base_url,
             is_local=True,
             available_models=available,
+            embedding_models=embedding_models_list,
         )
 
     @router.post("/select", status_code=200)

@@ -1164,6 +1164,15 @@ export interface LLMStatus {
         engine_type?: string  // 推理引擎类型（sageLLM）
         device?: string  // 设备类型（CPU/CUDA/Ascend）
     }>
+    embedding_models?: Array<{
+        name: string
+        base_url: string
+        is_local: boolean
+        description?: string
+        healthy?: boolean
+        engine_type?: string
+        device?: string
+    }>
     error?: string
 }
 

@@ -94,7 +94,12 @@ class StudioManager:
         if self.config_file.exists():
             try:
                 with open(self.config_file) as f:
-                    return json.load(f)
+                    data = json.load(f)
+                # Self-heal: if backed_port was accidentally set to gateway port, reset it
+                if data.get("backend_port") == self.gateway_port:
+                    data["backend_port"] = self.backend_port
+                    self.save_config(data)
+                return data
             except Exception:
                 pass
         return {
@@ -247,10 +252,19 @@ class StudioManager:
         # 方法2: 通过端口健康检查（检测外部启动的服务）
         config = self.load_config()
         backend_port = config.get("backend_port", self.backend_port)
+        # Guard: skip if backend_port was accidentally saved as the gateway port
+        if backend_port == self.gateway_port:
+            return None
         try:
             response = requests.get(f"http://localhost:{backend_port}/health", timeout=1)
             if response.status_code == 200:
-                return -1  # 运行中但无 PID 文件
+                # Verify this is the Studio backend, not the gateway or another service
+                try:
+                    data = response.json()
+                    if data.get("service") == "sage-studio":
+                        return -1  # 运行中但无 PID 文件
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1628,7 +1642,10 @@ if __name__ == "__main__":
         backend_port = port or config.get("backend_port", self.backend_port)
 
         # 🆕 智能端口选择：如果默认端口被占用，自动尝试其他端口
-        alternative_ports = [backend_port, 8081, 8082, 8083, 8888, 8090]
+        # Exclude gateway port to prevent accidentally binding on it
+        _gateway_port = self.gateway_port
+        _candidates = [backend_port, StudioPorts.BACKEND, 8081, 8082, 8083, 8088, 8888]
+        alternative_ports = [p for p in _candidates if p != _gateway_port]
         selected_port = None
         
         for try_port in alternative_ports:
