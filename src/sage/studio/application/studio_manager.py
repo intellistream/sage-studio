@@ -1788,6 +1788,17 @@ if __name__ == "__main__":
             console.print("[yellow]后端API未运行[/yellow]")
             return True
 
+        # When no PID is available (externally launched), fall back to port kill.
+        if running_pid == -1:
+            _cfg = self.load_config()
+            _port = _cfg.get("backend_port", self.backend_port)
+            result = self._kill_process_on_port(_port)
+            if self.backend_pid_file.exists():
+                self.backend_pid_file.unlink()
+            if result:
+                console.print("[green]✅ 后端API已停止[/green]")
+            return result
+
         try:
             # 优雅停止
             if os.name == "nt":
@@ -2135,10 +2146,22 @@ if __name__ == "__main__":
                 if self.pid_file.exists():
                     self.pid_file.unlink()
 
-        # 停止 Studio 后端（仅当由 Studio 管理时，PID 可识别）
+        # 停止 Studio 后端
         backend_pid = self.is_backend_running()
         if backend_pid and backend_pid != -1:
+            # Normal case: PID is known, stop gracefully via PID.
             if self.stop_backend():
+                stopped_services.append("后端API")
+        elif backend_pid == -1:
+            # Backend is reachable via HTTP health check but has no PID file
+            # (e.g. started externally or PID file was lost).  Fall back to
+            # killing by port so restart always starts with a clean slate.
+            _cfg = self.load_config()
+            _backend_port = _cfg.get("backend_port", self.backend_port)
+            console.print(f"[yellow]检测到后端API在端口 {_backend_port} 运行（无PID文件），尝试通过端口清理...[/yellow]")
+            if self._kill_process_on_port(_backend_port):
+                if self.backend_pid_file.exists():
+                    self.backend_pid_file.unlink()
                 stopped_services.append("后端API")
 
         # 可选：停止 Gateway

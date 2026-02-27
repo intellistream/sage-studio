@@ -59,9 +59,9 @@ def test_request_chat_completion_uses_bounded_max_tokens_and_timeout(monkeypatch
         extra_headers=(),
     )
 
-    text = request_chat_completion(endpoint=endpoint, message="hi", timeout_s=30.0)
+    result = request_chat_completion(endpoint=endpoint, message="hi", timeout_s=30.0)
 
-    assert text == "hello"
+    assert result.content == "hello"
     client = holder["client"]
     assert client.timeout == 45.0
     assert client.captured_json["max_tokens"] == 64

@@ -20,6 +20,29 @@ _EVENT_POLL_TIMEOUT_S = 0.2
 _KEEPALIVE_INTERVAL_S = 10.0
 _MAX_KEEPALIVE_COUNT = int(os.environ.get("STUDIO_CHAT_SSE_MAX_KEEPALIVE_COUNT", "12"))
 
+# Stage kind → frontend step_type mapping (from AgentOrchestrator stage names)
+STAGE_KIND_TO_STEP_TYPE: dict[str, str] = {
+    "routing": "thinking",
+    "retrieval": "retrieval",
+    "agentic": "tool_call",
+    "tool_call": "tool_call",
+    "response": "response",
+}
+
+# Stage names that carry text content (LLM generation output) → emit as delta
+_GENERATION_STAGE_PREFIX = "chat.generation"
+
+
+def _stage_to_step_type(stage: str) -> str:
+    """Derive frontend step_type from a dotted stage name (e.g. 'routing' -> 'thinking')."""
+    kind = stage.split(".")[0]
+    return STAGE_KIND_TO_STEP_TYPE.get(kind, kind)
+
+
+def _is_generation_stage(stage: str) -> bool:
+    """Return True when the stage carries LLM text output (should emit as 'delta')."""
+    return stage.startswith(_GENERATION_STAGE_PREFIX)
+
 
 class ChatSSEStreamAdapter:
     def __init__(
@@ -42,6 +65,9 @@ class ChatSSEStreamAdapter:
         self._max_keepalive_count = max(1, int(max_keepalive_count))
         self._monotonic = monotonic
         self._now_ts = now_ts
+        # Track step_ids already announced so we can distinguish first RUNNING (→ step)
+        # from subsequent RUNNING events for the same step (→ step_update).
+        self._seen_step_ids: set[str] = set()
 
     def iter_sse(self) -> Generator[str, None, None]:
         last_keepalive = self._monotonic()
@@ -124,34 +150,91 @@ class ChatSSEStreamAdapter:
                 False,
             )
         if item.kind == "event" and item.event is not None:
-            return _sse_stage_event(event=item.event, model=self._model), False
+            return self._sse_stage_event(event=item.event, model=self._model), False
         return None, False
 
+    def _sse_stage_event(self, *, event: StageEvent, model: str) -> str:
+        """Translate a StageEvent into the correct SSE frame.
 
-def _sse_stage_event(*, event: StageEvent, model: str) -> str:
-    is_error_state = event.state in {StageEventState.FAILED, StageEventState.CANCELLED}
-    is_success = event.state == StageEventState.SUCCEEDED
-    if is_error_state:
-        event_type = "error"
-    elif is_success:
-        # SUCCEEDED events are always chat deltas (content may be empty for degenerate model outputs).
-        event_type = "delta"
-    else:
-        # RUNNING / intermediate events are step metadata, not chat content.
-        event_type = "step"
-    payload = {
-        "type": event_type,
-        "session_id": event.run_id,
-        "message_id": event.request_id,
-        "step_id": event.stage,
-        "step_type": event.stage,
-        "status": event.state.value,
-        "content": event.message or "",
-        "error": event.message if is_error_state else None,
-    }
-    if event.metrics:
-        payload["metrics"] = event.metrics
-    return f"event: chat.v2\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        Mapping:
+        - RUNNING + generation stage  → ``delta``       streaming token chunk
+        - RUNNING (first occurrence)  → ``step``        status: running
+        - RUNNING (subsequent)        → ``step_update`` status: running  (partial content)
+        - SUCCEEDED + generation      → ``delta``       empty content + metrics  (terminal)
+        - SUCCEEDED + reasoning       → ``step_update`` status: completed
+        - FAILED / CANCELLED          → ``step_update`` status: failed
+        """
+        stage = event.stage
+        step_type = _stage_to_step_type(stage)
+
+        # ── terminal error ──────────────────────────────────────────────────
+        if event.state in {StageEventState.FAILED, StageEventState.CANCELLED}:
+            payload: dict[str, Any] = {
+                "type": "step_update",
+                "step_id": stage,
+                "step_type": step_type,
+                "status": "failed",
+                "content": "",
+                "error": event.message,
+            }
+            return f"event: chat.v2\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        # ── success ─────────────────────────────────────────────────────────
+        if event.state == StageEventState.SUCCEEDED:
+            if _is_generation_stage(stage):
+                # LLM text output → streaming delta
+                payload = {
+                    "type": "delta",
+                    "session_id": event.run_id,
+                    "message_id": event.request_id,
+                    "content": event.message or "",
+                }
+                if event.metrics:
+                    payload["metrics"] = event.metrics
+            else:
+                # Reasoning / routing / retrieval step completed
+                payload = {
+                    "type": "step_update",
+                    "step_id": stage,
+                    "step_type": step_type,
+                    "status": "completed",
+                    "content": event.message or "",
+                }
+            return f"event: chat.v2\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        # ── running + generation stage → streaming token delta ──────────────
+        # LLM token chunks arrive as RUNNING chat.generation.* events so that
+        # the browser can append text progressively without waiting for the
+        # full response.  The subsequent SUCCEEDED event (empty content) closes
+        # the stream and carries throughput metrics.
+        if _is_generation_stage(stage):
+            payload = {
+                "type": "delta",
+                "session_id": event.run_id,
+                "message_id": event.request_id,
+                "content": event.message or "",
+            }
+            if event.metrics:
+                payload["metrics"] = event.metrics
+            return f"event: chat.v2\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        # ── running / intermediate ───────────────────────────────────────────
+        if stage not in self._seen_step_ids:
+            self._seen_step_ids.add(stage)
+            sse_type = "step"
+        else:
+            sse_type = "step_update"
+
+        payload = {
+            "type": sse_type,
+            "step_id": stage,
+            "step_type": step_type,
+            "status": "running",
+            "content": event.message or "",
+        }
+        return f"event: chat.v2\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
 
 
 def _sse_done(*, request_id: str, model: str, now_ts: Callable[[], float] = time.time) -> str:

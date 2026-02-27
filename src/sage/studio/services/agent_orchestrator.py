@@ -8,6 +8,7 @@ Dependencies: IntentClassifier, KnowledgeManager, WorkflowGenerator
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -194,22 +195,26 @@ class AgentOrchestrator:
         decision: WorkflowDecision,
     ) -> AsyncGenerator[AgentStep | str, None]:
         memory_service = get_memory_service(session_id)
+        yield self._make_step("response", "正在生成回复...", status="running")
+        full_text = ""
         try:
-            response_text = await self._call_gateway_chat(
+            async for chunk in self._stream_gateway_chat(
                 message=message,
                 session_id=session_id,
                 context_items=context_items,
                 evidence=[],
-            )
+            ):
+                full_text += chunk
+                yield chunk
         except RuntimeError as exc:
-            logger.error("General chat gateway call failed: %s", exc)
+            logger.error("General chat gateway streaming failed: %s", exc)
             yield self._make_step("response", str(exc), status="failed")
             yield f"[Error] {exc}"
             return
 
-        if response_text:
-            await memory_service.add_interaction(message, response_text)
-            yield response_text
+        if full_text:
+            await memory_service.add_interaction(message, full_text)
+            yield self._make_step("response", "回复完成", status="completed")
         else:
             yield "(LLM returned empty response. The model may not be loaded yet.)"
 
@@ -264,22 +269,26 @@ class AgentOrchestrator:
                 except Exception as exc:
                     logger.warning("Failed to ingest evidence into vector store: %s", exc)
 
+        yield self._make_step("response", "正在生成回复...", status="running")
+        full_text = ""
         try:
-            response_text = await self._call_gateway_chat(
+            async for chunk in self._stream_gateway_chat(
                 message=message,
                 session_id=session_id,
                 context_items=context_items,
                 evidence=evidence_payload,
-            )
+            ):
+                full_text += chunk
+                yield chunk
         except RuntimeError as exc:
-            logger.error("RAG gateway call failed: %s", exc)
+            logger.error("RAG gateway streaming failed: %s", exc)
             yield self._make_step("response", str(exc), status="failed")
             yield f"[Error] {exc}"
             return
 
-        if response_text:
-            await memory_service.add_interaction(message, response_text)
-            yield response_text
+        if full_text:
+            await memory_service.add_interaction(message, full_text)
+            yield self._make_step("response", "回复完成", status="completed")
         else:
             yield "(LLM returned empty response. The model may not be loaded yet.)"
 
@@ -341,6 +350,92 @@ class AgentOrchestrator:
             await memory_service.add_interaction(message, full_response)
 
     async def _call_gateway_chat(
+        self,
+        *,
+        message: str,
+        session_id: str,
+        context_items: list,
+        evidence: list[dict],
+    ) -> str:
+        """Call the LLM Gateway non-streaming (delegates to _call_gateway_chat_non_streaming)."""
+        return await self._call_gateway_chat_non_streaming(
+            message=message,
+            session_id=session_id,
+            context_items=context_items,
+            evidence=evidence,
+        )
+
+    async def _stream_gateway_chat(
+        self,
+        *,
+        message: str,
+        session_id: str,
+        context_items: list,
+        evidence: list[dict],
+    ) -> AsyncGenerator[str, None]:
+        """Stream token chunks from the LLM Gateway via SSE.
+
+        Yields each ``content`` delta as a plain string as soon as it arrives,
+        enabling the caller to forward chunks to the frontend progressively.
+
+        Raises:
+            RuntimeError: When the gateway is unreachable, times out, or errors.
+        """
+        context_text = self._format_context(context_items, evidence)
+        messages: list[dict] = []
+        if context_text:
+            messages.append({"role": "system", "content": context_text})
+        messages.append({"role": "user", "content": message})
+
+        base_url = self._resolve_gateway_base_url()
+        try:
+            async with httpx.AsyncClient(timeout=90.0, trust_env=False) as client:
+                async with client.stream(
+                    "POST",
+                    f"{base_url}/v1/chat/completions",
+                    json={
+                        "model": "sage-default",
+                        "messages": messages,
+                        "stream": True,
+                        "session_id": session_id,
+                    },
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        detail = body.decode(errors="replace")[:200]
+                        raise RuntimeError(
+                            f"LLM Gateway error ({resp.status_code}): {detail}"
+                        )
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            token = chunk["choices"][0]["delta"].get("content", "")
+                            if token:
+                                yield token
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"Cannot connect to LLM Gateway at {base_url}. "
+                "Please ensure the gateway is running (sage gateway start)."
+            )
+        except httpx.TimeoutException:
+            raise RuntimeError(
+                "LLM Gateway streaming request timed out (90s). "
+                "The LLM engine may be overloaded or unresponsive."
+            )
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(f"LLM Gateway streaming call failed: {exc}")
+
+    async def _call_gateway_chat_non_streaming(
         self,
         *,
         message: str,

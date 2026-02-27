@@ -333,9 +333,23 @@ class _SharedChatDispatcher:
         if not runtime_ids:
             return
         item = ChatEventItem(kind="event", event=event)
+        # Only close the stream when the stage is truly terminal.  Intermediate
+        # reasoning-step SUCCEEDED events (e.g. "routing", "retrieval") must
+        # NOT close the stream; only failures/cancels and the final generation
+        # stage SUCCEEDED are stream-terminal.
+        _is_stream_terminal = event.state in {
+            StageEventState.FAILED,
+            StageEventState.CANCELLED,
+        } or (
+            event.state == StageEventState.SUCCEEDED
+            and (
+                event.stage.startswith("chat.generation")
+                or event.stage.endswith(".error")
+            )
+        )
         for runtime_request_id in runtime_ids:
             self._emit_item(runtime_request_id, item)
-            if event.state in _TERMINAL_EVENT_STATES:
+            if _is_stream_terminal:
                 self._route_done(
                     RunOutputDone(
                         request_id=runtime_request_id,

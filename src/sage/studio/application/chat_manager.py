@@ -40,6 +40,8 @@ class ChatModeManager(StudioManager):
 
         # Local LLM service management (via sageLLM)
         self.llm_service = None  # Will be VLLMService or other sageLLM service
+        # All started LLM services: list of {"port": int, "log": Path}
+        self.llm_services: list[dict] = []
         # Default to enabling LLM with a small model
         self.llm_enabled = os.getenv("SAGE_STUDIO_LLM", "true").lower() in ("true", "1", "yes")
         # Use Qwen2.5-0.5B as default - lightweight for local development
@@ -583,6 +585,7 @@ class ChatModeManager(StudioManager):
             llm_pid_file = log_dir / "llm_engine.pid"
             llm_pid_file.write_text(str(proc.pid))
             self.llm_service = proc  # Track the process
+            self.llm_services.append({"port": self.llm_port, "log": llm_log})
 
             console.print(f"   [green]✓[/green] sageLLM 引擎已启动 (PID: {proc.pid})")
             console.print(f"   日志: {llm_log}")
@@ -1265,69 +1268,71 @@ class ChatModeManager(StudioManager):
         llm_ports_to_check.append(StudioPorts.LLM_DEFAULT)  # 8001
         registered_llm_count = 0
         for port in llm_ports_to_check:
+            if port == self.gateway_port:
+                continue
+
             health_url = f"http://127.0.0.1:{port}/health"
+            health_ready = False
+            for _ in range(8):
+                try:
+                    resp = requests.get(health_url, timeout=2)
+                    if resp.status_code == 200:
+                        health_ready = True
+                        break
+                except requests.RequestException:
+                    pass
+                time.sleep(1)
+
+            if not health_ready:
+                continue
+
+            model_names: list[str] = []
+            for _ in range(8):
+                try:
+                    models_resp = requests.get(f"http://127.0.0.1:{port}/v1/models", timeout=2)
+                    if models_resp.status_code == 200:
+                        data = models_resp.json()
+                        model_names = [
+                            str(model.get("id", "")).strip()
+                            for model in data.get("data", [])
+                            if str(model.get("id", "")).strip()
+                        ]
+                    if model_names:
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+
+            if not model_names:
+                continue
+
+            model_name = model_names[0]
+
+            engine_id = f"engine-llm-{port}"
+            # Unregister first to handle restart (ignore 404)
             try:
-                resp = requests.get(health_url, timeout=2)
-                if resp.status_code == 200:
-                    # Must be a real engine endpoint (gateway-only ports expose /health too).
-                    model_name = ""
-                    try:
-                        info_resp = requests.get(f"http://127.0.0.1:{port}/info", timeout=2)
-                        if info_resp.status_code != 200:
-                            continue
-                        info = info_resp.json()
-                        model_name = str(info.get("model", "")).strip()
-                    except Exception:
-                        continue
-
-                    if not model_name:
-                        continue
-
-                    try:
-                        probe_resp = requests.post(
-                            f"http://127.0.0.1:{port}/v1/completions",
-                            json={
-                                "model": model_name,
-                                "prompt": "health_check",
-                                "max_tokens": 1,
-                                "stream": False,
-                            },
-                            timeout=3,
-                        )
-                        if probe_resp.status_code == 404:
-                            continue
-                    except Exception:
-                        continue
-
-                    engine_id = f"engine-llm-{port}"
-                    # Unregister first to handle restart (ignore 404)
-                    try:
-                        requests.delete(f"{unregister_base}/{engine_id}", timeout=3)
-                    except Exception:
-                        pass
-
-                    payload = {
-                        "engine_id": engine_id,
-                        "model_id": model_name,
-                        "host": "127.0.0.1",
-                        "port": port,
-                        "engine_kind": "llm",
-                    }
-                    try:
-                        r = requests.post(register_url, json=payload, timeout=5)
-                        if r.status_code == 200:
-                            registered_llm_count += 1
-                            console.print(
-                                f"[green]✅ 已注册 LLM 引擎到 Gateway: {model_name} @ :{port}[/green]"
-                            )
-                        else:
-                            console.print(
-                                f"[yellow]⚠️  注册 LLM 引擎失败 (:{port}): {r.text}[/yellow]"
-                            )
-                    except Exception as e:
-                        console.print(f"[yellow]⚠️  注册 LLM 引擎异常 (:{port}): {e}[/yellow]")
-            except requests.RequestException:
+                requests.delete(f"{unregister_base}/{engine_id}", timeout=3)
+            except Exception:
                 pass
+
+            payload = {
+                "engine_id": engine_id,
+                "model_id": model_name,
+                "host": "127.0.0.1",
+                "port": port,
+                "engine_kind": "llm",
+            }
+            try:
+                r = requests.post(register_url, json=payload, timeout=5)
+                if r.status_code == 200:
+                    registered_llm_count += 1
+                    console.print(
+                        f"[green]✅ 已注册 LLM 引擎到 Gateway: {model_name} @ :{port}[/green]"
+                    )
+                else:
+                    console.print(f"[yellow]⚠️  注册 LLM 引擎失败 (:{port}): {r.text}[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]⚠️  注册 LLM 引擎异常 (:{port}): {e}[/yellow]")
 
         if registered_llm_count == 0:
             console.print(
@@ -1558,6 +1563,7 @@ class ChatModeManager(StudioManager):
                         used_ports.add(engine_port)  # 同时占用内部引擎端口
                         started_count += 1
                         current_port = next_port + 2  # 跳过 gateway port + engine port
+                        self.llm_services.append({"port": next_port, "log": llm_log})
 
                         if self.llm_service is None:
                             self.llm_service = proc
@@ -1709,8 +1715,13 @@ class ChatModeManager(StudioManager):
             log_dir = get_user_paths().logs_dir
             service_info = []  # (服务名, 端口, 日志路径)
 
-            # 1. LLM 引擎
-            if start_llm and self.llm_service:
+            # 1. LLM 引擎（可能有多个）
+            if start_llm and self.llm_services:
+                for i, svc in enumerate(self.llm_services):
+                    label = "LLM 引擎" if i == 0 else f"LLM 引擎 #{i + 1}"
+                    service_info.append((label, svc["port"], svc["log"]))
+            elif start_llm and self.llm_service:
+                # Fallback: service was reused/detected but not tracked in llm_services
                 llm_log = log_dir / "llm_engine.log"
                 service_info.append(("LLM 引擎", self.llm_port, llm_log))
 

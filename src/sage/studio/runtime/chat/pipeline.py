@@ -9,6 +9,7 @@ from sage.studio.runtime.chat.actors import (
     ChatFlowErrorHandler,
     ExtractMessage,
     GenerateAIResponse,
+    OrchestratedResponseActor,
     SessionFilter,
     SessionKeyByTailShard,
     SessionStateProcessor,
@@ -32,7 +33,7 @@ def create_chat_actor_refs() -> ChatActorRefs:
         extract_message_ref=fn.create_actor(ExtractMessage).handle,
         key_tail_ref=fn.create_actor(SessionKeyByTailShard).handle,
         process_state_ref=fn.create_actor(SessionStateProcessor).handle,
-        generate_response_ref=fn.create_actor(GenerateAIResponse).handle,
+        generate_response_ref=fn.create_actor(OrchestratedResponseActor).handle,
         error_handler_ref=fn.create_actor(ChatFlowErrorHandler).handle,
     )
 

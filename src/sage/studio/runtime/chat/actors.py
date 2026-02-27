@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import queue
+import threading
+import time
+from collections.abc import Generator
 from typing import Any, cast
 
 from sage.flownet.core.exceptions import ExceptionDecision, ExceptionEvent
@@ -195,10 +200,167 @@ def _call_inference(*, endpoint: ResolvedEndpoint, message: str) -> ChatCompleti
         raise RuntimeError(f"provider_call_failed: {exc}") from exc
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Orchestrated actor helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+_QUEUE_SENTINEL = object()
+
+
+def _agent_step_status_to_state(status: str) -> StageEventState:
+    """Map AgentStep.status string to StageEventState."""
+    if status == "running":
+        return StageEventState.RUNNING
+    if status == "failed":
+        return StageEventState.FAILED
+    return StageEventState.SUCCEEDED
+
+
+class OrchestratedResponseActor:
+    """Flownet actor that routes messages through AgentOrchestrator.
+
+    Returns a *generator* so that Flownet's ``flatmap`` emits each StageEvent
+    immediately as it is produced, providing progressive reasoning-step display
+    in the frontend rather than a single batched burst.
+
+    Design:
+    - A background OS thread runs the async orchestrator pipeline.
+    - Each item yielded by the orchestrator is put onto a ``queue.Queue``.
+    - The generator reads from the queue, yielding StageEvents as they arrive.
+    - ``str`` items (LLM token chunks) are emitted as ``RUNNING`` generation
+      events; the SSE adapter forwards these as ``delta`` frames immediately.
+    - A final ``SUCCEEDED`` generation event (empty content) closes the stream
+      and carries throughput metrics.
+    """
+
+    def handle(self, payload: Any) -> Generator[StageEvent, None, None]:
+        if isinstance(payload, StageEvent):
+            yield payload
+            return
+        if not isinstance(payload, dict):
+            return
+
+        message = cast(str, payload.get("message", ""))
+        run_id = cast(str, payload.get("run_id", "unknown"))
+        request_id = cast(str, payload.get("request_id", "unknown"))
+        session_id = cast(str, payload.get("session_id", run_id))
+
+        out: queue.Queue = queue.Queue()
+
+        def _worker() -> None:
+            """Run the orchestrator async generator in a dedicated event loop."""
+            async def _run() -> None:
+                try:
+                    # Late import — catches ImportError inside the error guard.
+                    from sage.studio.services.agent_orchestrator import get_orchestrator  # noqa: PLC0415
+                    orchestrator = get_orchestrator()
+                    async for item in orchestrator.process_message(
+                        message=message, session_id=session_id
+                    ):
+                        out.put(item)
+                except Exception as exc:  # noqa: BLE001
+                    out.put(exc)
+                finally:
+                    out.put(_QUEUE_SENTINEL)
+
+            asyncio.run(_run())
+
+        worker_thread = threading.Thread(target=_worker, daemon=True)
+        worker_thread.start()
+
+        t0 = time.perf_counter()
+        text_chunks: list[str] = []
+        had_error = False
+
+        while True:
+            item = out.get()
+
+            if item is _QUEUE_SENTINEL:
+                break
+
+            if isinstance(item, Exception):
+                yield StageEvent(
+                    run_id=run_id,
+                    request_id=request_id,
+                    stage="chat.flow.error",
+                    state=StageEventState.FAILED,
+                    message=f"orchestrator_failed: {item}",
+                )
+                had_error = True
+                break
+
+            if isinstance(item, str):
+                # LLM token chunk — emit immediately as a streaming delta.
+                text_chunks.append(item)
+                yield StageEvent(
+                    run_id=run_id,
+                    request_id=request_id,
+                    stage="chat.generation.response",
+                    state=StageEventState.RUNNING,
+                    message=item,
+                )
+            elif hasattr(item, "type") and hasattr(item, "status"):
+                # AgentStep — routing / retrieval / tool-call / response step.
+                stage = str(item.type.value if hasattr(item.type, "value") else item.type)
+                status_str = str(item.status.value if hasattr(item.status, "value") else item.status)
+                state = _agent_step_status_to_state(status_str)
+                yield StageEvent(
+                    run_id=run_id,
+                    request_id=request_id,
+                    stage=stage,
+                    state=state,
+                    message=str(item.content),
+                )
+
+        worker_thread.join(timeout=5)
+
+        if had_error:
+            return
+
+        # ── terminal generation event ────────────────────────────────────────
+        # All text content was already sent as RUNNING deltas above.  This
+        # SUCCEEDED event carries only metrics and tells the SSE adapter (and
+        # service._route_stage_event) that the stream is done.
+        elapsed = time.perf_counter() - t0
+        final_text = "".join(text_chunks)
+
+        if not final_text.strip():
+            # Nothing was streamed — emit the fallback text as the sole delta.
+            fallback = (
+                "(The model returned an empty response. "
+                "This may happen with small models. Please try rephrasing your question.)"
+            )
+            yield StageEvent(
+                run_id=run_id,
+                request_id=request_id,
+                stage="chat.generation.response",
+                state=StageEventState.RUNNING,
+                message=fallback,
+            )
+            final_text = fallback
+
+        metrics: dict[str, float] | None = None
+        if elapsed > 0.05:  # noqa: PLR2004
+            word_count = len(final_text.split())
+            approx_tokens = max(1, int(word_count * 1.3))
+            tps = round(approx_tokens / elapsed, 1)
+            metrics = {"throughput_tps": tps}
+
+        yield StageEvent(
+            run_id=run_id,
+            request_id=request_id,
+            stage="chat.generation.response",
+            state=StageEventState.SUCCEEDED,
+            message="",  # content already sent as RUNNING deltas
+            metrics=metrics,
+        )
+
+
 __all__ = [
     "ChatFlowErrorHandler",
     "ExtractMessage",
     "GenerateAIResponse",
+    "OrchestratedResponseActor",
     "SessionFilter",
     "SessionKeyByTailShard",
     "SessionStateProcessor",

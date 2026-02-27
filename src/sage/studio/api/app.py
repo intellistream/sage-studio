@@ -35,12 +35,24 @@ async def _app_lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     prewarm = os.environ.get("STUDIO_CHAT_PREWARM", "1").strip().lower()
     if prewarm not in {"0", "false", "off", "no"}:
-        try:
-            from sage.studio.runtime.chat import bootstrap_chat_service
+        # Run the chat pipeline bootstrap in a background thread so that the
+        # server becomes ready to serve /health immediately, rather than waiting
+        # for the (potentially slow) Flownet pipeline initialization to finish.
+        import asyncio
+        import logging
 
-            bootstrap_chat_service()
-        except Exception:
-            pass
+        _log = logging.getLogger(__name__)
+
+        async def _background_bootstrap() -> None:
+            loop = asyncio.get_running_loop()
+            try:
+                from sage.studio.runtime.chat import bootstrap_chat_service
+
+                await loop.run_in_executor(None, bootstrap_chat_service)
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("Chat service bootstrap failed (non-fatal): %s", exc)
+
+        asyncio.create_task(_background_bootstrap())
 
     yield
 

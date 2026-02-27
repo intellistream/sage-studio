@@ -714,6 +714,23 @@ export interface MultiAgentChatCallbacks {
 }
 
 /**
+ * Human-readable label for a pipeline step_type string.
+ * Used when constructing a ReasoningStep from a backend SSE 'step' event.
+ */
+function _stepTitle(stepType: string): string {
+    const labels: Record<string, string> = {
+        thinking: 'Thinking',
+        routing: 'Routing',
+        retrieval: 'Retrieval',
+        tool_call: 'Tool',
+        response: 'Response',
+        analysis: 'Analysis',
+        reasoning: 'Reasoning',
+    }
+    return labels[stepType] ?? stepType
+}
+
+/**
  * 发送聊天消息（SSE 流式响应）
  * 支持推理步骤事件 (兼容旧版回调)
  *
@@ -838,7 +855,22 @@ export async function sendChatMessage(
                         }
                     }
 
-                    if ((payload.type === 'step' || payload.type === 'step_update') && payload.step_id && callbacks?.onReasoningStepUpdate) {
+                    // 'step' → NEW reasoning step: create it via onReasoningStep
+                    if (payload.type === 'step' && payload.step_id) {
+                        if (callbacks?.onReasoningStep) {
+                            callbacks.onReasoningStep({
+                                id: payload.step_id,
+                                type: (payload.step_type || payload.step_id) as any,
+                                title: _stepTitle(payload.step_type || payload.step_id || ''),
+                                content: payload.content || '',
+                                status: 'running',
+                                timestamp: new Date().toISOString(),
+                            })
+                        }
+                    }
+
+                    // 'step_update' → UPDATE an existing step (status change or partial content)
+                    if (payload.type === 'step_update' && payload.step_id && callbacks?.onReasoningStepUpdate) {
                         callbacks.onReasoningStepUpdate(payload.step_id, {
                             content: payload.content,
                             status: payload.status === 'failed' ? 'error' : payload.status as any,
