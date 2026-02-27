@@ -9,6 +9,7 @@ export interface ChatSSEEnvelope {
     step_type?: string
     status?: string
     error?: string
+    metrics?: Record<string, unknown>
 }
 
 export interface ParsedSSEEvent {

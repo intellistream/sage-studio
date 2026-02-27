@@ -149,6 +149,8 @@ def _sse_stage_event(*, event: StageEvent, model: str) -> str:
         "content": event.message or "",
         "error": event.message if is_error_state else None,
     }
+    if event.metrics:
+        payload["metrics"] = event.metrics
     return f"event: chat.v2\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 

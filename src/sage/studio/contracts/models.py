@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,6 +53,7 @@ class StageEvent(BaseModel):
     state: StageEventState
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     message: str | None = None
+    metrics: dict[str, Any] | None = None
 
 
 class ArtifactRef(BaseModel):

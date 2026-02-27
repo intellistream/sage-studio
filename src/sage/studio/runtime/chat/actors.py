@@ -6,7 +6,7 @@ from sage.flownet.core.exceptions import ExceptionDecision, ExceptionEvent
 from sage.flownet.core.stream_event import StreamEvent
 
 from sage.studio.contracts.models import StageEvent, StageEventState
-from sage.studio.runtime.adapters import InferenceCallError, request_chat_completion
+from sage.studio.runtime.adapters import ChatCompletionResult, InferenceCallError, request_chat_completion
 from sage.studio.runtime.endpoints import ResolvedEndpoint, resolve_endpoint_for_model
 
 
@@ -117,7 +117,8 @@ class GenerateAIResponse:
                 f"model_not_registered: model={model!r} is not registered in endpoint={resolved.endpoint_id!r}"
             )
 
-        response_text = _call_inference(endpoint=resolved, message=message)
+        response = _call_inference(endpoint=resolved, message=message)
+        response_text = response.content
 
         # Guard against empty/whitespace-only responses from small models
         if not response_text or not response_text.strip():
@@ -133,6 +134,7 @@ class GenerateAIResponse:
                 stage="chat.generation.succeeded",
                 state=StageEventState.SUCCEEDED,
                 message=response_text,
+                metrics=response.metrics,
             ),
         ]
 
@@ -171,7 +173,7 @@ def _extract_field(payload: Any, field: str, *, fallback: str) -> str:
     return fallback
 
 
-def _call_inference(*, endpoint: ResolvedEndpoint, message: str) -> str:
+def _call_inference(*, endpoint: ResolvedEndpoint, message: str) -> ChatCompletionResult:
     """Call the LLM endpoint synchronously. Raises RuntimeError on failure."""
     if endpoint.provider not in {
         "alibaba_dashscope",

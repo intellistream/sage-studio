@@ -406,6 +406,7 @@ function MessageBubble({
     streamingMessageId: string | null
 }) {
     const isUser = message.role === 'user'
+    const tokensPerSecond = extractTokensPerSecond(message.metadata)
 
     if (isUser) {
         // User message: Right-aligned, light grey bubble
@@ -445,10 +446,52 @@ function MessageBubble({
                         reasoningSteps={message.reasoningSteps}
                         isReasoning={message.isReasoning}
                     />
+                    {tokensPerSecond !== null && (
+                        <div className="mt-2 text-xs text-[--gemini-text-secondary]">
+                            Speed {tokensPerSecond.toFixed(2)} token/s
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     )
+}
+
+function extractTokensPerSecond(metadata?: Record<string, unknown>): number | null {
+    const metricsValue = metadata?.metrics
+    if (!metricsValue || typeof metricsValue !== 'object') {
+        return null
+    }
+
+    return findTokensPerSecond(metricsValue as Record<string, unknown>)
+}
+
+function findTokensPerSecond(metrics: Record<string, unknown>): number | null {
+    const candidateKeys = ['tokens_per_second', 'token_per_second', 'throughput_tps', 'tps']
+
+    for (const key of candidateKeys) {
+        const value = metrics[key]
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value
+        }
+        if (typeof value === 'string') {
+            const parsed = Number.parseFloat(value)
+            if (Number.isFinite(parsed)) {
+                return parsed
+            }
+        }
+    }
+
+    for (const nested of Object.values(metrics)) {
+        if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+            const found = findTokensPerSecond(nested as Record<string, unknown>)
+            if (found !== null) {
+                return found
+            }
+        }
+    }
+
+    return null
 }
 
 /** Empty state when no messages */
@@ -492,6 +535,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
         removeSession,
         addMessage,
         appendToMessage,
+        updateMessageMetadata,
         setCurrentInput,
         setIsStreaming,
         setStreamingMessageId,
@@ -756,6 +800,9 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                     },
                     onReasoningEnd: () => {
                         setMessageReasoning(sessionId, assistantMessageId, false)
+                    },
+                    onMetrics: (metrics) => {
+                        updateMessageMetadata(sessionId, assistantMessageId, { metrics })
                     },
                 },
                 selectedModel // Pass the selected model with fallback

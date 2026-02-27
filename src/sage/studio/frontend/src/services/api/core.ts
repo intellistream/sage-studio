@@ -684,6 +684,7 @@ export interface ChatMessageCallbacks {
     onChunk: (chunk: string) => void
     onError: (error: Error) => void
     onComplete: () => void
+    onMetrics?: (metrics: Record<string, unknown>) => void
     onReasoningStep?: (step: ReasoningStepEvent['step']) => void
     onReasoningStepUpdate?: (stepId: string, updates: ReasoningStepUpdateEvent['updates']) => void
     onReasoningContent?: (stepId: string, content: string) => void
@@ -831,6 +832,9 @@ export async function sendChatMessage(
                     if (payload.type === 'delta') {
                         if (payload.content) {
                             onChunk(payload.content)
+                        }
+                        if (payload.metrics && callbacks?.onMetrics) {
+                            callbacks.onMetrics(payload.metrics)
                         }
                     }
 

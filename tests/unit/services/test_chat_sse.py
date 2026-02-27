@@ -72,6 +72,31 @@ def test_chat_sse_maps_runtime_error_to_error_event() -> None:
     assert any("data: [DONE]" in chunk for chunk in chunks)
 
 
+def test_chat_sse_includes_metrics_from_stage_event() -> None:
+    sub = _FakeSubscription(
+        [
+            _FakeItem(
+                kind="event",
+                event=StageEvent(
+                    run_id="session-2",
+                    request_id="req-3",
+                    stage="chat.generation.succeeded",
+                    state=StageEventState.SUCCEEDED,
+                    message="hello",
+                    metrics={"throughput_tps": 25.4},
+                    timestamp=datetime.now(timezone.utc),
+                ),
+            ),
+            _FakeItem(kind="done"),
+        ]
+    )
+
+    adapter = ChatSSEStreamAdapter(subscription=sub, request_id="req-3", model="sage-default")
+    chunks = list(adapter.iter_sse())
+
+    assert any('"metrics": {"throughput_tps": 25.4}' in chunk for chunk in chunks)
+
+
 def test_chat_sse_emits_timeout_error_after_keepalive_threshold() -> None:
     sub = _FakeSubscription([])
 

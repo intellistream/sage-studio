@@ -58,6 +58,7 @@ interface ChatState {
     setMessages: (sessionId: string, messages: ChatMessage[]) => void
     addMessage: (sessionId: string, message: ChatMessage) => void
     updateMessage: (sessionId: string, messageId: string, content: string) => void
+    updateMessageMetadata: (sessionId: string, messageId: string, metadata: Record<string, unknown>) => void
     appendToMessage: (sessionId: string, messageId: string, chunk: string) => void
 
     // 推理步骤相关
@@ -148,6 +149,20 @@ export const useChatStore = create<ChatState>((
                 ...state.messages,
                 [sessionId]: sessionMessages.map((msg: ChatMessage) =>
                     msg.id === messageId ? { ...msg, content } : msg
+                ),
+            },
+        }
+    }),
+
+    updateMessageMetadata: (sessionId: string, messageId: string, metadata: Record<string, unknown>) => set((state: ChatState) => {
+        const sessionMessages = state.messages[sessionId] || []
+        return {
+            messages: {
+                ...state.messages,
+                [sessionId]: sessionMessages.map((msg: ChatMessage) =>
+                    msg.id === messageId
+                        ? { ...msg, metadata: { ...(msg.metadata || {}), ...metadata } }
+                        : msg
                 ),
             },
         }
