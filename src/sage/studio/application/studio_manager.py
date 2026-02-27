@@ -95,8 +95,9 @@ class StudioManager:
             try:
                 with open(self.config_file) as f:
                     data = json.load(f)
-                # Self-heal: if backed_port was accidentally set to gateway port, reset it
-                if data.get("backend_port") == self.gateway_port:
+                # Self-heal: if backend_port is gateway port or old conflicting default 8080
+                _bp = data.get("backend_port")
+                if _bp == self.gateway_port or _bp == 8080:
                     data["backend_port"] = self.backend_port
                     self.save_config(data)
                 return data
@@ -1644,7 +1645,7 @@ if __name__ == "__main__":
         # 🆕 智能端口选择：如果默认端口被占用，自动尝试其他端口
         # Exclude gateway port to prevent accidentally binding on it
         _gateway_port = self.gateway_port
-        _candidates = [backend_port, StudioPorts.BACKEND, 8081, 8082, 8083, 8088, 8888]
+        _candidates = [backend_port, StudioPorts.BACKEND, 8765, 8766, 8081, 8082, 8083]
         alternative_ports = [p for p in _candidates if p != _gateway_port]
         selected_port = None
         

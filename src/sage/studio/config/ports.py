@@ -15,7 +15,7 @@ class StudioPorts:
     FRONTEND_DEV_EXTRA = (35180,)
 
     # Backend (FastAPI)
-    BACKEND = 8080
+    BACKEND = 8765
 
     # Gateway (来自 sagellm，Studio 依赖的外部服务)
     GATEWAY = 8889

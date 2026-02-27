@@ -19,7 +19,7 @@ export default defineConfig({
             // Studio Backend API - 独立后端提供完整的 SAGE 框架能力
             // 支持环境变量配置端口，避免 8080 冲突
             '/api': {
-                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8080'}`,
+                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8765'}`,
                 changeOrigin: true,
                 rewrite: (path) => path,
             },
@@ -37,7 +37,7 @@ export default defineConfig({
         proxy: {
             // Studio Backend API
             '/api': {
-                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8080'}`,
+                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8765'}`,
                 changeOrigin: true,
                 rewrite: (path) => path,
             },
