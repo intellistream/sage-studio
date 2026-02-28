@@ -18,3 +18,10 @@
 
 ## Key paths
 - `src/sage/studio/cli.py`, `chat_manager.py`, `config/backend/api.py`, `frontend/src/`.
+
+## Polyrepo coordination (mandatory)
+
+- This repository is an independent SAGE sub-repository and is developed/released independently.
+- Do not assume sibling source directories exist locally in `intellistream/SAGE`.
+- For cross-repo rollout, publish this repo/package first, then bump the version pin in `SAGE/packages/sage/pyproject.toml` when applicable.
+- Do not add local editable installs of other SAGE sub-packages in setup scripts or docs.
