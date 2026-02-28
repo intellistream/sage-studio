@@ -25,6 +25,7 @@ import {
     Upload as UploadIcon,
     Settings as SettingsIcon,
     Layout as LayoutIcon,
+    Bot,
     User,
     Sun,
     Moon,
@@ -130,6 +131,7 @@ function ModeSwitcher({
         { value: 'chat' as const, label: 'Chat', icon: <MessageSquare size={16} /> },
         { value: 'canvas' as const, label: 'Canvas', icon: <LayoutIcon size={16} /> },
         { value: 'finetune' as const, label: 'Finetune', icon: <Zap size={16} /> },
+        { value: 'agent' as const, label: 'Agent', icon: <Bot size={16} /> },
     ]
 
     return (

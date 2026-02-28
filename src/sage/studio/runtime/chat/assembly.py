@@ -12,7 +12,6 @@ from sage.flownet.runtime.runtime import try_get_runtime
 from sage.studio.runtime.chat.contracts import ChatPipelineSettings
 from sage.studio.runtime.chat.pipeline import build_chat_pipeline, create_chat_actor_refs
 
-
 _ASSEMBLY_LOCK = threading.Lock()
 _CHAT_PIPELINE = None
 _CHAT_SETTINGS = ChatPipelineSettings()

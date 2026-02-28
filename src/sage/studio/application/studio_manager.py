@@ -15,9 +15,9 @@ import psutil
 import requests
 from rich.console import Console
 from rich.table import Table
+from sage.common.config.user_paths import get_user_paths
 
 from sage.studio.config.ports import StudioPorts
-from sage.common.config.user_paths import get_user_paths
 
 console = Console()
 
@@ -566,12 +566,12 @@ class StudioManager:
 
         console.print(f"[blue]🔧 启动默认 LLM 引擎: {default_model}...[/blue]")
         console.print("   (使用 sageLLM CPU Backend，轻量且高效)")
-        
+
         try:
             # 使用 sage-llm serve-engine 命令启动引擎
             # 端口使用 9001，避免与 Gateway 冲突
             engine_port = 9001
-            
+
             # 🔧 FIX: 检查端口是否被占用（防御性编程）
             if self._is_port_in_use(engine_port):
                 console.print(f"[yellow]⚠️  端口 {engine_port} 已被占用，尝试停止旧引擎...[/yellow]")
@@ -580,14 +580,14 @@ class StudioManager:
                     return False
                 # 等待端口释放
                 time.sleep(2)
-            
+
             # ✨ NEW: 使用 sageLLM Core API 直接启动 CPU backend
             engine_log = Path("/tmp/sage-studio-engine.log")
             console.print("   [dim]使用 sageLLM Core CPU backend...[/dim]")
-            
+
             # 创建启动脚本（使用 sageLLM Core API）
             engine_script = self._create_sagellm_cpu_engine_script(default_model, engine_port, engine_log)
-            
+
             # 后台启动引擎
             with open(engine_log, "w") as f:
                 subprocess.Popen(
@@ -596,7 +596,7 @@ class StudioManager:
                     stderr=subprocess.STDOUT,
                     start_new_session=True
                 )
-            
+
             # 等待引擎启动并注册到 Gateway
             # CPU 模型加载较慢（0.5B ~10s, 1.5B ~30s），给 120s
             max_wait = 120
@@ -679,11 +679,11 @@ class StudioManager:
             console.print("[yellow]⚠️  引擎启动超时，可能仍在后台加载[/yellow]")
             console.print(f"   请检查日志: {engine_log}")
             return False
-            
+
         except Exception as e:
             console.print(f"[red]❌ 启动默认引擎失败: {e}[/red]")
             console.print("[yellow]💡 您可以手动启动引擎:[/yellow]")
-            console.print(f"   python -c 'from sagellm_core import LLMEngine, LLMEngineConfig; ...'")
+            console.print("   python -c 'from sagellm_core import LLMEngine, LLMEngineConfig; ...'")
             return False
 
     def _create_sagellm_cpu_engine_script(self, model: str, port: int, log_file: Path) -> Path:
@@ -700,7 +700,7 @@ class StudioManager:
         user_paths = get_user_paths()
         script_path = user_paths.cache_dir / "studio" / "start_cpu_engine.py"
         script_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # 生成启动脚本（基于用户验证的 test_qwen_1_5b_cpu.py + FastAPI 服务器）
         script_content = f'''#!/usr/bin/env python3
 """sageLLM CPU Engine for SAGE Studio - HTTP Server
@@ -961,10 +961,10 @@ if __name__ == "__main__":
         log_level="info"
     )
 '''
-        
+
         with open(script_path, "w") as f:
             f.write(script_content)
-        
+
         script_path.chmod(0o755)
         return script_path
 
@@ -1648,19 +1648,19 @@ if __name__ == "__main__":
         _candidates = [backend_port, StudioPorts.BACKEND, 8765, 8766, 8081, 8082, 8083]
         alternative_ports = [p for p in _candidates if p != _gateway_port]
         selected_port = None
-        
+
         for try_port in alternative_ports:
             if not self._is_port_in_use(try_port):
                 selected_port = try_port
                 if try_port != backend_port:
                     console.print(f"[yellow]端口 {backend_port} 被占用，自动切换到端口 {try_port}[/yellow]")
                 break
-        
+
         if selected_port is None:
             console.print(f"[red]❌ 无法找到可用端口（尝试了: {alternative_ports}）[/red]")
             console.print("[yellow]💡 提示：可以设置环境变量 STUDIO_BACKEND_PORT 指定端口[/yellow]")
             return False
-        
+
         backend_port = selected_port
 
         # 更新配置
@@ -1872,7 +1872,7 @@ if __name__ == "__main__":
                 if not self.start_llm_service(port=self.gateway_port):
                     console.print("[yellow]⚠️  LLM 服务启动失败，Chat 模式可能无法使用[/yellow]")
                     console.print(
-                        f"[yellow]   您可以稍后手动启动: sage-llm serve-engine --port 9001[/yellow]"
+                        "[yellow]   您可以稍后手动启动: sage-llm serve-engine --port 9001[/yellow]"
                     )
             else:
                 if llm_pid == -1:

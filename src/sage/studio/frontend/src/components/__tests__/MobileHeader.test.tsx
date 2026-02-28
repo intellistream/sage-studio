@@ -29,7 +29,7 @@ describe('MobileHeader', () => {
             model_name: 'test-model',
             running: true,
             healthy: true,
-            service_type: 'local_vllm' as const,
+            service_type: 'local_sagellm' as const,
             base_url: defaultBaseUrl,
             is_local: true,
         },

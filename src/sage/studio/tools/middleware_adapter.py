@@ -9,8 +9,8 @@ import inspect
 from typing import Any
 
 from pydantic import BaseModel, Field, create_model
-
 from sage.libs.foundation.tools.tool import BaseTool as MiddlewareBaseTool
+
 from sage.studio.tools.base import BaseTool as StudioBaseTool
 
 

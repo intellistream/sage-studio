@@ -87,9 +87,7 @@ async def test_sse_helper_model_and_id():
 
     result = {"text": "ok", "meta": {}}
     chunks: list[str] = []
-    async for chunk in pipeline_result_to_openai_sse(
-        result, msg_id="test-id-42", model="my-model"
-    ):
+    async for chunk in pipeline_result_to_openai_sse(result, msg_id="test-id-42", model="my-model"):
         chunks.append(chunk)
 
     for c in chunks:

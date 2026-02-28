@@ -16,8 +16,9 @@ from __future__ import annotations
 import ast
 import logging
 import re
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING
 
 from sage.libs.rag import CharacterSplitter, LoaderFactory
 
@@ -76,7 +77,7 @@ class DocumentLoader:
 
         if ignore_file.exists():
             try:
-                with open(ignore_file, 'r', encoding='utf-8') as f:
+                with open(ignore_file, encoding='utf-8') as f:
                     for line in f:
                         line = line.strip()
                         # Skip empty lines and comments

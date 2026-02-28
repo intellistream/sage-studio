@@ -1,14 +1,14 @@
+from sage.studio.runtime.endpoints.bootstrap import (
+    bootstrap_dashscope_endpoint_from_env,
+    reset_endpoint_bootstrap_state,
+)
 from sage.studio.runtime.endpoints.contracts import (
+    PROVIDER_PRESETS,
     EndpointCreate,
     EndpointProvider,
     EndpointProviderPreset,
     EndpointUpdate,
     ManagedEndpoint,
-    PROVIDER_PRESETS,
-)
-from sage.studio.runtime.endpoints.bootstrap import (
-    bootstrap_dashscope_endpoint_from_env,
-    reset_endpoint_bootstrap_state,
 )
 from sage.studio.runtime.endpoints.registry import (
     EndpointRegistry,

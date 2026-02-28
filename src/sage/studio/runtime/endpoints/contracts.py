@@ -148,7 +148,7 @@ PROVIDER_PRESETS: tuple[EndpointProviderPreset, ...] = (
         default_model_ids=("model-1",),
         default_extra_headers=(),
         requires_api_key=False,
-        notes="vLLM/LM Studio/TGI gateways",
+        notes="sageLLM/LM Studio/TGI gateways",
     ),
 )
 

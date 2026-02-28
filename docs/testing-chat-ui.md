@@ -18,7 +18,7 @@
 ### ✅ Phase 3: Kernel Integration (Complete)
 
 - Real LLM execution via SAGE DataStream
-- OpenAI-compatible API support (Gateway/vLLM/OpenAI/Ollama)
+- OpenAI-compatible API support (Gateway/sageLLM/OpenAI/Ollama)
 - Development mode with echo fallback
 - Multi-turn conversation context
 - Error handling and logging

@@ -10,8 +10,6 @@ Studio provides a modern web UI for:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
 from rich.console import Console
 
@@ -34,10 +32,10 @@ def _get_studio_manager():
 
 @app.command()
 def start(
-    frontend_port: Optional[int] = typer.Option(
+    frontend_port: int | None = typer.Option(
         None, "--port", "-p", help="Frontend port (default: 5173 dev, 8889 prod)"
     ),
-    backend_port: Optional[int] = typer.Option(
+    backend_port: int | None = typer.Option(
         None, "--backend-port", help="Backend API port (default: 8080)"
     ),
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
@@ -89,7 +87,7 @@ def status():
 
 @app.command()
 def restart(
-    frontend_port: Optional[int] = typer.Option(None, "--port", "-p", help="Frontend port"),
+    frontend_port: int | None = typer.Option(None, "--port", "-p", help="Frontend port"),
     dev: bool = typer.Option(True, "--dev/--prod", help="Development or production mode"),
     skip_confirm: bool = typer.Option(
         False, "--yes", "-y", help="Skip confirmation prompts"

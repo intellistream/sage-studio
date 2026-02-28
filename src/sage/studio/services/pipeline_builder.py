@@ -14,13 +14,14 @@ Pipeline Builder - 将 Studio 可视化模型转换为 SAGE Pipeline
 - 状态管理（由 SAGE Engine 完成）
 """
 
-from collections import defaultdict, deque
 import logging
+from collections import defaultdict, deque
+
+from sage.common.config.user_paths import get_user_paths
 
 # 从 SAGE 公共 API 导入（参考 PACKAGE_ARCHITECTURE.md）
 from sage.kernel.api import LocalEnvironment
 from sage.kernel.api.base_environment import BaseEnvironment
-from sage.common.config.user_paths import get_user_paths
 from sage.libs.foundation.io.sink import (
     FileSink,
     MemWriteSink,
@@ -40,7 +41,6 @@ from sage.libs.foundation.io.source import (
 
 from ..models import VisualNode, VisualPipeline
 from .node_registry import get_node_registry
-
 
 logger = logging.getLogger(__name__)
 

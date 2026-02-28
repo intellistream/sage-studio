@@ -21,6 +21,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from sage.studio.runtime.session_memory import get_session_memory_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -110,7 +112,7 @@ class _SessionRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "_SessionRecord":
+    def from_dict(cls, data: dict[str, Any]) -> _SessionRecord:
         rec = object.__new__(cls)
         rec.id = data["id"]
         rec.title = data.get("title", "Chat")
@@ -310,6 +312,7 @@ def build_sessions_router() -> APIRouter:
     @router.post("/sessions", response_model=SessionDetail, status_code=201)
     async def create_session(body: CreateSessionRequest) -> SessionDetail:
         record = _store.create(title=body.title)
+        await get_session_memory_manager().on_session_created(record.id)
         return record.to_detail()
 
     @router.get("/sessions/{session_id}", response_model=SessionDetail)
@@ -323,11 +326,13 @@ def build_sessions_router() -> APIRouter:
     async def delete_session(session_id: str) -> None:
         if not _store.delete(session_id):
             raise HTTPException(status_code=404, detail="Session not found")
+        await get_session_memory_manager().on_session_deleted(session_id)
 
     @router.post("/sessions/{session_id}/clear", status_code=200)
     async def clear_session(session_id: str) -> dict[str, str]:
         if not _store.clear_messages(session_id):
             raise HTTPException(status_code=404, detail="Session not found")
+        await get_session_memory_manager().on_session_cleared(session_id)
         return {"status": "ok"}
 
     @router.patch("/sessions/{session_id}/title", response_model=SessionSummary)
@@ -342,6 +347,12 @@ def build_sessions_router() -> APIRouter:
         ok = _store.add_message(session_id, body.role, body.content, body.metadata)
         if not ok:
             raise HTTPException(status_code=404, detail="Session not found")
+        await get_session_memory_manager().remember_message(
+            session_id=session_id,
+            role=body.role,
+            content=body.content,
+            metadata=body.metadata,
+        )
         return {"status": "ok"}
 
     return router

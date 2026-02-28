@@ -17,12 +17,11 @@ import psutil
 import requests
 from rich.console import Console
 from rich.table import Table
-
 from sage.common.config import find_sage_project_root
-from sage.studio.config.ports import StudioPorts
 from sage.common.config.user_paths import get_user_paths
 
 from sage.studio.application.studio_manager import StudioManager
+from sage.studio.config.ports import StudioPorts
 from sage.studio.utils.gpu_check import is_gpu_available
 
 console = Console()
@@ -39,7 +38,7 @@ class ChatModeManager(StudioManager):
         super().__init__()
 
         # Local LLM service management (via sageLLM)
-        self.llm_service = None  # Will be VLLMService or other sageLLM service
+        self.llm_service = None  # Will be sageLLM service instance
         # All started LLM services: list of {"port": int, "log": Path}
         self.llm_services: list[dict] = []
         # Default to enabling LLM with a small model
@@ -153,9 +152,12 @@ class ChatModeManager(StudioManager):
 
             # Use subprocess to start sageLLM full-stack (Gateway + Engine)
             serve_cmd = [
-                "sage-llm", "serve",
-                "--model", model_path,
-                "--port", str(StudioPorts.LLM_DEFAULT),
+                "sage-llm",
+                "serve",
+                "--model",
+                model_path,
+                "--port",
+                str(StudioPorts.LLM_DEFAULT),
             ]
 
             # Start new service with finetuned model
@@ -236,11 +238,11 @@ class ChatModeManager(StudioManager):
             return False
         try:
             # Remove /v1 suffix if present (sageLLM health is at root level)
-            if normalized.endswith('/v1'):
+            if normalized.endswith("/v1"):
                 base = normalized[:-3]  # Remove last 3 chars: '/v1'
             else:
                 base = normalized
-            health_url = base + '/health'
+            health_url = base + "/health"
             resp = requests.get(health_url, timeout=2)
             return resp.status_code == 200
         except Exception:
@@ -289,6 +291,7 @@ class ChatModeManager(StudioManager):
         """
         try:
             import subprocess
+
             result = subprocess.run(
                 ["dmesg", "-T"],
                 capture_output=True,
@@ -337,7 +340,9 @@ class ChatModeManager(StudioManager):
                 # Quick port check first
                 if not self._probe_llm_endpoint(base_url):
                     consecutive_failures += 1
-                    console.print(f"[yellow]⚠️  引擎健康检查失败 ({consecutive_failures}/3)[/yellow]")
+                    console.print(
+                        f"[yellow]⚠️  引擎健康检查失败 ({consecutive_failures}/3)[/yellow]"
+                    )
 
                     if consecutive_failures >= 3:
                         # Check if OOM killed
@@ -357,7 +362,9 @@ class ChatModeManager(StudioManager):
                                 break  # Stop monitoring
                         else:
                             console.print("[yellow]⚠️  引擎意外停止，尝试重启...[/yellow]")
-                            if self._last_model_name and self._start_llm_service(model=self._last_model_name):
+                            if self._last_model_name and self._start_llm_service(
+                                model=self._last_model_name
+                            ):
                                 console.print("[green]✅ 引擎自动恢复成功[/green]")
                                 consecutive_failures = 0
                             else:
@@ -492,7 +499,9 @@ class ChatModeManager(StudioManager):
             return requested
 
         # Auto-downgrade to smaller model
-        console.print(f"[yellow]⚠️  内存不足 (可用: {available_gb:.1f}GB, 需要: {required:.1f}GB)[/yellow]")
+        console.print(
+            f"[yellow]⚠️  内存不足 (可用: {available_gb:.1f}GB, 需要: {required:.1f}GB)[/yellow]"
+        )
 
         # Try smaller models in order
         for model, req in sorted(model_requirements.items(), key=lambda x: x[1]):
@@ -531,8 +540,7 @@ class ChatModeManager(StudioManager):
         # Check if sage-llm CLI is available
         if shutil.which("sage-llm") is None:
             console.print(
-                "[yellow]⚠️  sageLLM 未安装，跳过本地 LLM 启动[/yellow]\n"
-                "提示：pip install isagellm"
+                "[yellow]⚠️  sageLLM 未安装，跳过本地 LLM 启动[/yellow]\n提示：pip install isagellm"
             )
             return False
 
@@ -554,16 +562,21 @@ class ChatModeManager(StudioManager):
                 console.print("[yellow]⚠️  未找到可用的微调模型，使用默认模型[/yellow]")
 
         # Launch sageLLM engine via CLI subprocess
-        console.print(f"[blue]🚀 启动 sageLLM 引擎 (模型: {model_name}, 端口: {self.llm_port})...[/blue]")
+        console.print(
+            f"[blue]🚀 启动 sageLLM 引擎 (模型: {model_name}, 端口: {self.llm_port})...[/blue]"
+        )
 
         log_dir = get_user_paths().logs_dir
         log_dir.mkdir(parents=True, exist_ok=True)
         llm_log = log_dir / "llm_engine.log"
 
         serve_cmd = [
-            "sage-llm", "serve",
-            "--model", model_name,
-            "--port", str(self.llm_port),
+            "sage-llm",
+            "serve",
+            "--model",
+            model_name,
+            "--port",
+            str(self.llm_port),
         ]
 
         try:
@@ -624,7 +637,7 @@ class ChatModeManager(StudioManager):
                     return False
                 time.sleep(wait_s)
                 if self._probe_llm_endpoint(base_url):
-                    elapsed_extra = sum(retry_intervals[:retry_intervals.index(wait_s) + 1])
+                    elapsed_extra = sum(retry_intervals[: retry_intervals.index(wait_s) + 1])
                     console.print(f"[green]   ✓ 引擎在额外等待 ~{elapsed_extra}s 后就绪[/green]")
                     engine_healthy = True
                     break
@@ -1106,8 +1119,7 @@ class ChatModeManager(StudioManager):
         except Exception as exc:
             console.print(f"[red]❌ 启动 gateway 失败: {exc}")
             console.print(
-                "[yellow]提示: 请确保已安装 sagellm-gateway: "
-                "pip install isagellm[/yellow]"
+                "[yellow]提示: 请确保已安装 sagellm-gateway: pip install isagellm[/yellow]"
             )
             return False
 
@@ -1534,10 +1546,14 @@ class ChatModeManager(StudioManager):
                     llm_log = log_dir / f"llm_engine_{next_port}.log"
                     engine_port = next_port + 1  # sagellm 内部引擎端口 (gateway+1)
                     serve_cmd = [
-                        "sage-llm", "serve",
-                        "--model", model_name,
-                        "--port", str(next_port),
-                        "--engine-port", str(engine_port),
+                        "sage-llm",
+                        "serve",
+                        "--model",
+                        model_name,
+                        "--port",
+                        str(next_port),
+                        "--engine-port",
+                        str(engine_port),
                     ]
                     log_handle = open(llm_log, "w")
                     child_env = os.environ.copy()
@@ -1728,7 +1744,9 @@ class ChatModeManager(StudioManager):
             # 2. Embedding 服务
             if not no_embedding:
                 embedding_log = log_dir / "embedding.log"
-                service_info.append(("Embedding 服务", StudioPorts.EMBEDDING_DEFAULT, embedding_log))
+                service_info.append(
+                    ("Embedding 服务", StudioPorts.EMBEDDING_DEFAULT, embedding_log)
+                )
 
             # 3. Gateway
             if self.gateway_log_file.exists():
@@ -1756,7 +1774,9 @@ class ChatModeManager(StudioManager):
                 console.print("\n[cyan]📡 运行中的服务：[/cyan]")
                 max_name_len = max(len(name) for name, _, _ in service_info)
                 for name, port, log_path in service_info:
-                    console.print(f"   {name:<{max_name_len}} | 端口: [yellow]{port:<5}[/yellow] | 日志: [dim]{log_path}[/dim]")
+                    console.print(
+                        f"   {name:<{max_name_len}} | 端口: [yellow]{port:<5}[/yellow] | 日志: [dim]{log_path}[/dim]"
+                    )
 
             console.print("=" * 70 + "\n")
 

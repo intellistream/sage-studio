@@ -43,7 +43,7 @@
             "type": "text",
             "required": false,
             "defaultValue": "",
-            "placeholder": "留空则自动选择（优先本地 Gateway/vLLM）",
+            "placeholder": "留空则自动选择（优先本地 Gateway/sageLLM）",
             "description": "API 端点地址（留空自动根据模型选择）"
         },
         {

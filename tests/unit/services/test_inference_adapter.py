@@ -9,15 +9,7 @@ class _DummyResponse:
         return None
 
     def json(self) -> dict:
-        return {
-            "choices": [
-                {
-                    "message": {
-                        "content": "hello"
-                    }
-                }
-            ]
-        }
+        return {"choices": [{"message": {"content": "hello"}}]}
 
 
 class _DummyClient:

@@ -508,7 +508,7 @@ jobs:
           KEEP_LLM=false
           if [ -n "$KEEP_PORTS" ]; then
             KEEP_LLM=true
-            echo "✅ 检测到健康的 LLM (端口 $KEEP_PORTS)，跳过停止 sage-llm 与 vLLM 进程"
+            echo "✅ 检测到健康的 LLM (端口 $KEEP_PORTS)，跳过停止 sage-llm 进程"
           else
             echo "⚠️ 未检测到健康的 LLM"
           fi
@@ -521,13 +521,13 @@ jobs:
             sudo systemctl stop $svc || true
           done
 
-          # 有健康的 LLM 则跳过杀进程；否则停止 systemd LLM + 杀不健康的 vLLM 进程
+          # 有健康的 LLM 则跳过杀进程；否则停止 systemd LLM + 清理不健康推理进程
           if [ "$KEEP_LLM" = "true" ]; then
-            echo "✅ 检测到健康的 LLM (端口 $HEALTHY_LLM_PORT)，跳过停止 sage-llm 与 vLLM 进程"
+            echo "✅ 检测到健康的 LLM (端口 $HEALTHY_LLM_PORT)，跳过停止 sage-llm 进程"
           else
             echo "⚠️ 未检测到健康的 LLM，清理可能的残留"
             sudo systemctl stop sage-llm || true
-            pkill -u $(whoami) -f "vllm" 2>/dev/null || true
+            pkill -u $(whoami) -f "sage-llm" 2>/dev/null || true
           fi
 
           # 清理 Studio 相关残留进程

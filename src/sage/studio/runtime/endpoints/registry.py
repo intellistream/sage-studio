@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from datetime import datetime, timezone
-import threading
 
 from sage.studio.runtime.endpoints.contracts import (
+    PROVIDER_PRESETS,
     EndpointCreate,
     EndpointProviderPreset,
     EndpointUpdate,
     ManagedEndpoint,
-    PROVIDER_PRESETS,
 )
 from sage.studio.runtime.endpoints.secrets import encrypt_endpoint_secret
 

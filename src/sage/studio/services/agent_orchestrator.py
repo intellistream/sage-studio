@@ -7,23 +7,22 @@ Dependencies: IntentClassifier, KnowledgeManager, WorkflowGenerator
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import time
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import httpx
-
-from sage.studio.config.ports import StudioPorts
-from sage_libs.sage_agentic.intent import IntentClassifier, UserIntent, IntentResult
+from sage_libs.sage_agentic.intent import IntentClassifier
 from sage_libs.sage_agentic.workflows.router import (
     WorkflowDecision,
     WorkflowRequest,
     WorkflowRoute,
     WorkflowRouter,
 )
+
+from sage.studio.config.ports import StudioPorts
 from sage.studio.models.agent_step import (
     AgentStep,
 )
@@ -95,7 +94,11 @@ class AgentOrchestrator:
     def _build_code_tools(self) -> list:
         """Build the FS tools passed to CodingAgent/CoderBot at request time."""
         try:
-            from sage.studio.tools.code_writing import FileWriteTool, FileReadTool, ListDirectoryTool
+            from sage.studio.tools.code_writing import (
+                FileReadTool,
+                FileWriteTool,
+                ListDirectoryTool,
+            )
 
             return [FileWriteTool(), FileReadTool(), ListDirectoryTool()]
         except ImportError as exc:

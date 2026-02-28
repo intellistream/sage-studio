@@ -1,12 +1,10 @@
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, field_validator
-
 from sage.common.config.user_paths import get_user_data_dir
 
 # Configuration
@@ -37,7 +35,7 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    username: Optional[str] = None
+    username: str | None = None
 
 
 class UserCreate(BaseModel):
@@ -126,7 +124,7 @@ class AuthService:
             cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
 
-    def get_user(self, username: str) -> Optional[UserInDB]:
+    def get_user(self, username: str) -> UserInDB | None:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -144,7 +142,7 @@ class AuthService:
                 )
             return None
 
-    def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    def create_access_token(self, data: dict, expires_delta: timedelta | None = None) -> str:
         to_encode = data.copy()
         if expires_delta:
             expire = datetime.now(timezone.utc) + expires_delta
@@ -154,7 +152,7 @@ class AuthService:
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
 
-    def verify_token(self, token: str) -> Optional[str]:
+    def verify_token(self, token: str) -> str | None:
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             username: str = payload.get("sub")

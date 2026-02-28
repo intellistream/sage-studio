@@ -8,7 +8,6 @@ import sage.flownet.api as fn
 from sage.studio.runtime.chat.actors import (
     ChatFlowErrorHandler,
     ExtractMessage,
-    GenerateAIResponse,
     OrchestratedResponseActor,
     SessionFilter,
     SessionKeyByTailShard,

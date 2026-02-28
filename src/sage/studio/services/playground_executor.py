@@ -503,10 +503,10 @@ class PlaygroundExecutor:
 
                 return RefinerOperator
 
-            elif operator_type == "VLLMModelNode":
-                # TODO: 添加 vLLM 节点支持
+            elif operator_type == "LegacyModelNode":
+                # TODO: 添加历史模型节点支持
                 # Issue URL: https://github.com/intellistream/SAGE/issues/1107
-                logger.warning("VLLMModelNode 暂不支持")
+                logger.warning("LegacyModelNode 暂不支持")
                 return None
 
             else:

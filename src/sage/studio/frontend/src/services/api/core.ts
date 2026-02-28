@@ -1139,6 +1139,52 @@ export interface MemoryStats {
     available: boolean
 }
 
+export interface VidaMemoryUsage {
+    working_count: number
+    episodic_count: number
+    semantic_count: number
+}
+
+export interface VidaStatus {
+    state: 'running' | 'stopped'
+    accepting: boolean
+    queue_depth: number
+    processed_count: number
+    failed_count: number
+    uptime_seconds: number
+    trigger_names: string[]
+    disabled_trigger_names?: string[]
+    last_reflect_timestamp?: number
+    memory_usage?: VidaMemoryUsage
+}
+
+export interface VidaTrigger {
+    name: string
+    type: string
+    enabled: boolean
+}
+
+export interface VidaReflectionItem {
+    timestamp: number
+    summary: string
+    insights: string[]
+}
+
+export interface VidaMemoryRecallResponse {
+    query: string
+    top_k: number
+    layer: string
+    results: Record<string, Array<Record<string, any>>>
+}
+
+export interface VidaMemoryListResponse {
+    layer: 'working' | 'episodic' | 'semantic'
+    page: number
+    page_size: number
+    total: number
+    items: Array<Record<string, any>>
+}
+
 export const getMemoryConfig = async (): Promise<MemoryConfig> => {
     const response = await apiClient.get<MemoryConfig>('/studio/memory/config')
     return response.data
@@ -1147,6 +1193,66 @@ export const getMemoryConfig = async (): Promise<MemoryConfig> => {
 export const getMemoryStats = async (sessionId: string): Promise<MemoryStats> => {
     const response = await apiClient.get<MemoryStats>('/chat/memory/stats', {
         params: { session_id: sessionId },
+    })
+    return response.data
+}
+
+export const getVidaStatus = async (): Promise<VidaStatus> => {
+    const response = await apiClient.get<VidaStatus>('/vida/admin/status')
+    return response.data
+}
+
+export const getVidaTriggers = async (): Promise<VidaTrigger[]> => {
+    const response = await apiClient.get<{ triggers: VidaTrigger[] }>('/vida/admin/triggers')
+    return response.data.triggers || []
+}
+
+export const toggleVidaTrigger = async (name: string, enabled: boolean): Promise<VidaTrigger> => {
+    const response = await apiClient.post<VidaTrigger>(`/vida/admin/triggers/${name}/toggle`, { enabled })
+    return response.data
+}
+
+export const fireVidaTrigger = async (
+    name: string,
+    payload: Record<string, any> = {}
+): Promise<{ trigger_name: string; result_ok: boolean; message_id: string; answer: string; error: string }> => {
+    const response = await apiClient.post(`/vida/admin/trigger/${name}`, { payload })
+    return response.data
+}
+
+export const getVidaReflections = async (limit = 20): Promise<VidaReflectionItem[]> => {
+    const response = await apiClient.get<{ items: VidaReflectionItem[] }>('/vida/admin/reflections', {
+        params: { limit },
+    })
+    return response.data.items || []
+}
+
+export const recallVidaMemory = async (
+    query: string,
+    topK = 10,
+    layer: 'all' | 'working' | 'episodic' | 'semantic' = 'all'
+): Promise<VidaMemoryRecallResponse> => {
+    const response = await apiClient.get<VidaMemoryRecallResponse>('/vida/memory/recall', {
+        params: {
+            query,
+            top_k: topK,
+            layer,
+        },
+    })
+    return response.data
+}
+
+export const listVidaMemory = async (
+    layer: 'working' | 'episodic' | 'semantic',
+    page = 1,
+    pageSize = 20
+): Promise<VidaMemoryListResponse> => {
+    const response = await apiClient.get<VidaMemoryListResponse>('/vida/memory/list', {
+        params: {
+            layer,
+            page,
+            page_size: pageSize,
+        },
     })
     return response.data
 }
@@ -1178,7 +1284,7 @@ apiClient.interceptors.response.use(
 export interface LLMStatus {
     running: boolean
     healthy: boolean
-    service_type: 'gateway' | 'local_vllm' | 'remote_api' | 'not_configured' | 'unknown' | 'error'
+    service_type: 'gateway' | 'local_sagellm' | 'remote_api' | 'not_configured' | 'unknown' | 'error'
     model_name: string
     base_url: string
     is_local: boolean

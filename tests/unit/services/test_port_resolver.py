@@ -17,7 +17,9 @@ def test_resolve_port_priority(monkeypatch: pytest.MonkeyPatch) -> None:
     resolver = PortResolver(_FakeSupervisor(None))
 
     monkeypatch.setenv("STUDIO_TEST_PORT", "39001")
-    assert resolver.resolve_port(requested=39002, env_var="STUDIO_TEST_PORT", default=39003) == 39002
+    assert (
+        resolver.resolve_port(requested=39002, env_var="STUDIO_TEST_PORT", default=39003) == 39002
+    )
     assert resolver.resolve_port(requested=None, env_var="STUDIO_TEST_PORT", default=39003) == 39001
     monkeypatch.delenv("STUDIO_TEST_PORT")
     assert resolver.resolve_port(requested=None, env_var="STUDIO_TEST_PORT", default=39003) == 39003

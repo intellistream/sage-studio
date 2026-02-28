@@ -9,7 +9,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from sage.studio.api.chat_sse import ChatSSEStreamAdapter
-from sage.studio.api.llm import _get_gateway_url, _is_embedding_model, _pick_active_chat_model, _selected
+from sage.studio.api.llm import (
+    _get_gateway_url,
+    _is_embedding_model,
+    _pick_active_chat_model,
+    _selected,
+)
 from sage.studio.contracts.models import RunKind, RunRef
 
 

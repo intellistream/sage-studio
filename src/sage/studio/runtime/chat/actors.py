@@ -11,7 +11,11 @@ from sage.flownet.core.exceptions import ExceptionDecision, ExceptionEvent
 from sage.flownet.core.stream_event import StreamEvent
 
 from sage.studio.contracts.models import StageEvent, StageEventState
-from sage.studio.runtime.adapters import ChatCompletionResult, InferenceCallError, request_chat_completion
+from sage.studio.runtime.adapters import (
+    ChatCompletionResult,
+    InferenceCallError,
+    request_chat_completion,
+)
 from sage.studio.runtime.endpoints import ResolvedEndpoint, resolve_endpoint_for_model
 
 
@@ -252,7 +256,9 @@ class OrchestratedResponseActor:
             async def _run() -> None:
                 try:
                     # Late import — catches ImportError inside the error guard.
-                    from sage.studio.services.agent_orchestrator import get_orchestrator  # noqa: PLC0415
+                    from sage.studio.services.agent_orchestrator import (
+                        get_orchestrator,  # noqa: PLC0415
+                    )
                     orchestrator = get_orchestrator()
                     async for item in orchestrator.process_message(
                         message=message, session_id=session_id

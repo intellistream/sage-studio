@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from sage.studio.contracts.models import StageEvent, StageEventState
 
 if TYPE_CHECKING:
-    from sage.studio.runtime.chat import ChatEventItem, ChatEventSubscription
+    pass
 
 _TERMINAL_STATES = {
     StageEventState.SUCCEEDED,

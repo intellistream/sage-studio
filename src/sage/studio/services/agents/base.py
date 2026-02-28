@@ -3,7 +3,7 @@ Base Agent Interface for Studio Swarm Architecture
 """
 
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sage.studio.models.agent_step import AgentStep
 from sage.studio.tools.base import BaseTool

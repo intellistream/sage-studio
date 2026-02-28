@@ -19,6 +19,7 @@ def _require_live_enabled() -> None:
 def _require_real_model() -> bool:
     return os.getenv("STUDIO_LIVE_REQUIRE_REAL_MODEL") == "1"
 
+
 def _resolve_live_chat_model(*, base_url: str) -> str:
     status = requests.get(f"{base_url}/api/llm/status", timeout=10)
     assert status.status_code == 200, f"llm status failed: {status.status_code}"
@@ -41,7 +42,9 @@ def _resolve_live_chat_model(*, base_url: str) -> str:
         if _require_real_model() and (
             "mock" in model_name.lower() or model_name.lower().startswith("sage-default")
         ):
-            raise AssertionError(f"real-model mode enabled but only mock-like model found: {model_name}")
+            raise AssertionError(
+                f"real-model mode enabled but only mock-like model found: {model_name}"
+            )
         return model_name.strip()
 
     raise AssertionError("no live chat model available from /api/llm/status")
@@ -68,7 +71,9 @@ def _stream_chat_once(*, base_url: str, session_id: str, model: str, message: st
         except requests.RequestException as exc:
             last_error = exc
             if attempt == 2:
-                raise AssertionError(f"chat completion request failed after retries: {exc}") from exc
+                raise AssertionError(
+                    f"chat completion request failed after retries: {exc}"
+                ) from exc
             time.sleep(1.0)
             _ensure_backend_healthy(base_url=base_url)
 
@@ -83,10 +88,16 @@ def _stream_chat_once(*, base_url: str, session_id: str, model: str, message: st
 
     if _require_real_model():
         lower_text = text.lower()
-        assert '"type": "delta"' in text or '"type":"delta"' in text, "real-model stream missing delta"
-        assert '"type": "error"' not in text and '"type":"error"' not in text, "real-model stream contains error"
+        assert '"type": "delta"' in text or '"type":"delta"' in text, (
+            "real-model stream missing delta"
+        )
+        assert '"type": "error"' not in text and '"type":"error"' not in text, (
+            "real-model stream contains error"
+        )
         assert "stream_timeout_waiting_for_runtime" not in lower_text, "real-model stream timed out"
-        assert "placeholder" not in lower_text, "mock/placeholder response detected in real-model mode"
+        assert "placeholder" not in lower_text, (
+            "mock/placeholder response detected in real-model mode"
+        )
 
     return text
 
@@ -118,5 +129,7 @@ def test_live_multiturn_chat_session() -> None:
     ]
 
     for prompt in prompts:
-        text = _stream_chat_once(base_url=base_url, session_id=session_id, model=model, message=prompt)
+        text = _stream_chat_once(
+            base_url=base_url, session_id=session_id, model=model, message=prompt
+        )
         assert "placeholder" not in text.lower(), "mock/placeholder response detected in live chat"

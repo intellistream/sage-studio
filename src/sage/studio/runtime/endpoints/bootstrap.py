@@ -226,7 +226,7 @@ def _resolve_dashscope_api_key() -> str | None:
     key_file = os.environ.get("STUDIO_ALIBABA_API_KEY_FILE")
     if key_file and key_file.strip():
         try:
-            content = open(key_file.strip(), "r", encoding="utf-8").read().strip()
+            content = open(key_file.strip(), encoding="utf-8").read().strip()
         except OSError:
             return None
         return content or None

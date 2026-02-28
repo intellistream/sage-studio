@@ -2,13 +2,13 @@
 Node Registry - Maps Studio UI node types to SAGE Operators
 """
 
-import re
 import logging
+import re
 from importlib import import_module
 
 from sage.common.core.functions import MapFunction as MapOperator
-from .node_manifest import NODE_PLUGIN_MANIFEST
 
+from .node_manifest import NODE_PLUGIN_MANIFEST
 
 logger = logging.getLogger(__name__)
 

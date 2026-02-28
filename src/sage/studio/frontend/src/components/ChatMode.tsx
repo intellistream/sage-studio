@@ -43,6 +43,7 @@ import MessageContent from './MessageContent'
 import FileUpload from './FileUpload'
 import MobileHeader from './MobileHeader'
 import MobileSidebar from './MobileSidebar'
+import VidaStatusCard from './VidaStatusCard'
 import {
     sendChatMessage,
     getChatSessions,
@@ -52,14 +53,15 @@ import {
     clearChatSession as clearSessionApi,
     convertChatSessionToPipeline,
     getLLMStatus,
+    getVidaStatus,
     selectLLMModel,
     type ChatSessionSummary,
     type LLMStatus,
+    type VidaStatus,
 } from '../services/api'
 import { useFlowStore } from '../store/flowStore'
 import type { AppMode } from '../App'
 
-// ============================================================================
 // Sub-Components
 // ============================================================================
 
@@ -595,6 +597,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     const [recommendationSummary, setRecommendationSummary] = useState<string | null>(null)
     const [recommendationInsights, setRecommendationInsights] = useState<string[]>([])
     const [llmStatus, setLlmStatus] = useState<LLMStatus | null>(null)
+    const [vidaStatus, setVidaStatus] = useState<VidaStatus | null>(null)
     const [isUploadVisible, setIsUploadVisible] = useState(false)
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -607,8 +610,13 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     useEffect(() => {
         loadSessions()
         loadLLMStatus()
+        loadVidaStatus()
         const interval = setInterval(loadLLMStatus, 10000)
-        return () => clearInterval(interval)
+        const vidaInterval = setInterval(loadVidaStatus, 5000)
+        return () => {
+            clearInterval(interval)
+            clearInterval(vidaInterval)
+        }
     }, [])
 
     const loadLLMStatus = async () => {
@@ -617,6 +625,16 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
             setLlmStatus(status)
         } catch (error) {
             console.error('Failed to load LLM status:', error)
+        }
+    }
+
+    const loadVidaStatus = async () => {
+        try {
+            const status = await getVidaStatus()
+            setVidaStatus(status)
+        } catch (error) {
+            console.error('Failed to load VIDA status:', error)
+            setVidaStatus(null)
         }
     }
 
@@ -968,6 +986,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                         sessions={sessions}
                         currentSessionId={currentSessionId}
                         isLoading={isLoading}
+                        vidaStatus={vidaStatus}
                         onSessionClick={(sessionId) => {
                             setCurrentSessionId(sessionId)
                             loadSessionMessages(sessionId)
@@ -1007,6 +1026,8 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
 
                     {/* Session List */}
                     <div className="flex-1 overflow-y-auto gemini-scrollbar py-2">
+                        <VidaStatusCard status={vidaStatus} className="mx-3 mb-2" />
+
                         {isLoading ? (
                             <div className="flex justify-center items-center h-32">
                                 <Spin />

@@ -33,7 +33,9 @@ class _FakeSubscription:
         self.closed = True
 
 
-def _stage_event(*, state: StageEventState, message: str | None, stage: str = "reasoning") -> StageEvent:
+def _stage_event(
+    *, state: StageEventState, message: str | None, stage: str = "reasoning"
+) -> StageEvent:
     return StageEvent(
         run_id="session-1",
         request_id="req-1",
@@ -128,13 +130,16 @@ def test_chat_sse_emits_timeout_error_after_keepalive_threshold() -> None:
 # Issue #35: StageEvent → step / step_update SSE mapping
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def test_stage_running_first_emits_step() -> None:
     """First RUNNING event for a stage → SSE type 'step' with status 'running'."""
     sub = _FakeSubscription(
         [
             _FakeItem(
                 kind="event",
-                event=_stage_event(state=StageEventState.RUNNING, message="正在分析...", stage="routing"),
+                event=_stage_event(
+                    state=StageEventState.RUNNING, message="正在分析...", stage="routing"
+                ),
             ),
             _FakeItem(kind="done"),
         ]
@@ -159,7 +164,9 @@ def test_stage_running_subsequent_emits_step_update() -> None:
             ),
             _FakeItem(
                 kind="event",
-                event=_stage_event(state=StageEventState.RUNNING, message="update", stage="routing"),
+                event=_stage_event(
+                    state=StageEventState.RUNNING, message="update", stage="routing"
+                ),
             ),
             _FakeItem(kind="done"),
         ]
@@ -168,7 +175,9 @@ def test_stage_running_subsequent_emits_step_update() -> None:
     chunks = list(adapter.iter_sse())
 
     step_chunks = [c for c in chunks if '"type": "step"' in c and '"step_update"' not in c]
-    update_chunks = [c for c in chunks if '"type": "step_update"' in c and '"status": "running"' in c]
+    update_chunks = [
+        c for c in chunks if '"type": "step_update"' in c and '"status": "running"' in c
+    ]
     assert len(step_chunks) == 1, "exactly one 'step' event (first RUNNING)"
     assert len(update_chunks) == 1, "exactly one 'step_update' event (second RUNNING)"
 
@@ -188,7 +197,9 @@ def test_stage_succeeded_non_generation_emits_step_update_completed() -> None:
             _FakeItem(kind="done"),
         ]
     )
-    adapter = ChatSSEStreamAdapter(subscription=sub, request_id="req-completed", model="sage-default")
+    adapter = ChatSSEStreamAdapter(
+        subscription=sub, request_id="req-completed", model="sage-default"
+    )
     chunks = list(adapter.iter_sse())
 
     update_chunks = [c for c in chunks if '"type": "step_update"' in c]
@@ -253,7 +264,9 @@ def test_stage_retrieval_running_uses_correct_step_type() -> None:
         [
             _FakeItem(
                 kind="event",
-                event=_stage_event(state=StageEventState.RUNNING, message="searching", stage="retrieval"),
+                event=_stage_event(
+                    state=StageEventState.RUNNING, message="searching", stage="retrieval"
+                ),
             ),
             _FakeItem(kind="done"),
         ]
