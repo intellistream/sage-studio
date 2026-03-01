@@ -39,9 +39,6 @@ dependencies = [
     # Flownet runtime (distributed dataflow execution, replaces Ray)
     "isage-flownet>=0.1.1",
 
-    # sageLLM - IntelliStream自研推理引擎（包含Gateway、Control Plane、Backend等完整推理能力）
-    "isagellm>=0.5.4.3",
-
     # Agentic dependencies (independent packages)
     "isage-agentic>=0.1.0.3",
     "isage-sias>=0.1.0",
@@ -88,7 +85,14 @@ dependencies = [
 license = { text = "MIT" }
 
 [project.optional-dependencies]
-full = []
+# sageLLM inference engine — enables local LLM, gateway and control-plane features.
+# sage-studio works without this (LLM-related commands show an install hint).
+# Install: pip install isage-studio[llm]
+llm = [
+    "isagellm>=0.5.4.3",
+]
+
+full = ["isage-studio[llm]"]
 
 dev = [
     # dev includes [full] — no need for a separate extras install
