@@ -16,11 +16,9 @@ from typing import Any
 import psutil
 import requests
 from rich.console import Console
-from rich.prompt import Confirm
 from rich.table import Table
 from sage.common.config import find_sage_project_root
 from sage.common.config.user_paths import get_user_paths
-from sage_libs.sage_finetune import finetune_manager
 
 from sage.studio.application.studio_manager import StudioManager
 from sage.studio.config.ports import StudioPorts
@@ -47,7 +45,7 @@ class ChatModeManager(StudioManager):
         self.llm_enabled = os.getenv("SAGE_STUDIO_LLM", "true").lower() in ("true", "1", "yes")
         # Use Qwen2.5-0.5B as default - lightweight for local development
         self.llm_model = os.getenv("SAGE_STUDIO_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
-        self.llm_port = StudioPorts.SAGELLM_SERVE_PORT  # Unified default port (8901)
+        self.llm_port = StudioPorts.BENCHMARK_LLM  # Unified default port (8901)
 
         # Health monitoring
         self._health_monitor_thread: threading.Thread | None = None
@@ -63,36 +61,42 @@ class ChatModeManager(StudioManager):
         Returns:
             List of fine-tuned model info dictionaries
         """
-        models = []
-        for task in finetune_manager.tasks.values():
-            if task.status.value == "completed":
-                # Check for merged model (preferred) or LoRA checkpoint
-                output_path = Path(task.output_dir)
-                merged_path = output_path / "merged_model"
-                lora_path = output_path / "lora"
+        try:
+            from sage_libs.sage_finetune import finetune_manager
 
-                model_path = None
-                model_type = None
+            models = []
+            for task in finetune_manager.tasks.values():
+                if task.status.value == "completed":
+                    # Check for merged model (preferred) or LoRA checkpoint
+                    output_path = Path(task.output_dir)
+                    merged_path = output_path / "merged_model"
+                    lora_path = output_path / "lora"
 
-                if merged_path.exists():
-                    model_path = str(merged_path)
-                    model_type = "merged"
-                elif lora_path.exists():
-                    model_path = str(lora_path)
-                    model_type = "lora"
+                    model_path = None
+                    model_type = None
 
-                if model_path:
-                    models.append(
-                        {
-                            "path": model_path,
-                            "name": task.task_id,
-                            "base_model": task.model_name,
-                            "type": model_type,
-                            "completed_at": task.completed_at,
-                        }
-                    )
+                    if merged_path.exists():
+                        model_path = str(merged_path)
+                        model_type = "merged"
+                    elif lora_path.exists():
+                        model_path = str(lora_path)
+                        model_type = "lora"
 
-        return models
+                    if model_path:
+                        models.append(
+                            {
+                                "path": model_path,
+                                "name": task.task_id,
+                                "base_model": task.model_name,
+                                "type": model_type,
+                                "completed_at": task.completed_at,
+                            }
+                        )
+
+            return models
+        except ImportError:
+            console.print("[yellow]⚠️  FinetuneManager not available[/yellow]")
+            return []
 
     def get_finetuned_model_path(self, model_name: str) -> str | None:
         """Get path of a fine-tuned model by name.
@@ -400,7 +404,7 @@ class ChatModeManager(StudioManager):
             self.llm_port,
             StudioPorts.get_recommended_llm_port(),
             StudioPorts.LLM_DEFAULT,
-            StudioPorts.SAGELLM_SERVE_PORT,
+            StudioPorts.BENCHMARK_LLM,
         ]
 
         for port in llm_ports:
@@ -445,7 +449,7 @@ class ChatModeManager(StudioManager):
             return (True, env_base_url)
 
         ports_to_check = (
-            [port] if port else [StudioPorts.EMBEDDING_DEFAULT, StudioPorts.EMBEDDING_SECONDARY]
+            [port] if port else [StudioPorts.EMBEDDING_DEFAULT, StudioPorts.BENCHMARK_EMBEDDING]
         )
 
         for p in ports_to_check:
@@ -1272,9 +1276,7 @@ class ChatModeManager(StudioManager):
 
         # --- Register LLM engine(s) ---
         # Scan the LLM port range for running engines
-        llm_ports_to_check = list(
-            range(StudioPorts.SAGELLM_SERVE_PORT, StudioPorts.SAGELLM_SERVE_PORT + 10)
-        )
+        llm_ports_to_check = list(range(StudioPorts.BENCHMARK_LLM, StudioPorts.BENCHMARK_LLM + 10))
         llm_ports_to_check.append(StudioPorts.LLM_DEFAULT)  # 8001
         registered_llm_count = 0
         for port in llm_ports_to_check:
@@ -1446,7 +1448,7 @@ class ChatModeManager(StudioManager):
     def _get_used_llm_ports(self) -> set[int]:
         """Discover LLM ports in use by scanning listening TCP connections."""
         ports: set[int] = set()
-        llm_range = range(StudioPorts.LLM_DEFAULT, StudioPorts.SAGELLM_SERVE_PORT + 10)
+        llm_range = range(StudioPorts.LLM_DEFAULT, StudioPorts.BENCHMARK_LLM + 10)
         try:
             for conn in psutil.net_connections(kind="inet"):
                 if conn.status == "LISTEN" and conn.laddr.port in llm_range:
@@ -1459,8 +1461,8 @@ class ChatModeManager(StudioManager):
         """Return the next available TCP port for LLM services (clamped to 8901-8910)."""
         from sage.studio.config.ports import StudioPorts
 
-        port = max(start_port, StudioPorts.SAGELLM_SERVE_PORT)
-        max_port = StudioPorts.SAGELLM_SERVE_PORT + 9  # 8901-8910 inclusive
+        port = max(start_port, StudioPorts.BENCHMARK_LLM)
+        max_port = StudioPorts.BENCHMARK_LLM + 9  # 8901-8910 inclusive
         while port <= max_port:
             if port not in used_ports and not self._is_port_in_use(port):
                 return port
@@ -1665,7 +1667,12 @@ class ChatModeManager(StudioManager):
                     if skip_confirm:
                         should_auto_scale = True
                     else:
-                        should_auto_scale = Confirm.ask(prompt_msg, default=False)
+                        try:
+                            from rich.prompt import Confirm
+
+                            should_auto_scale = Confirm.ask(prompt_msg, default=False)
+                        except ImportError:
+                            should_auto_scale = False
 
                 if should_auto_scale:
                     starting_port = self._find_free_llm_port(
@@ -1832,7 +1839,7 @@ class ChatModeManager(StudioManager):
                     llm_table.add_row("说明", "由 UnifiedInferenceClient 自动检测使用")
         else:
             llm_table.add_row("状态", "[red]未运行[/red]")
-            llm_table.add_row("端口", str(StudioPorts.SAGELLM_SERVE_PORT))
+            llm_table.add_row("端口", str(StudioPorts.BENCHMARK_LLM))
             llm_table.add_row("提示", "默认启动本地服务 (除非指定 --no-llm)")
 
         console.print(llm_table)

@@ -190,7 +190,7 @@ class PlaygroundExecutor:
                 for port in [
                     StudioPorts.get_recommended_llm_port(),
                     StudioPorts.LLM_DEFAULT,
-                    StudioPorts.SAGELLM_SERVE_PORT,
+                    StudioPorts.BENCHMARK_LLM,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate, timeout=1.0):
@@ -503,8 +503,10 @@ class PlaygroundExecutor:
 
                 return RefinerOperator
 
-            elif operator_type == "LegacyModelNode":
-                raise ValueError("LegacyModelNode 已移除，请迁移到当前支持的操作符类型")
+            elif operator_type == "SageLLMNode":
+                # TODO: 接入 sageLLM gateway 推理算子
+                # Issue URL: https://github.com/intellistream/SAGE/issues/1107
+                raise ValueError("SageLLMNode 尚未实现：请通过 sageLLM gateway 接入推理服务")
 
             else:
                 logger.warning(f"未知的操作符类型: {operator_type}")

@@ -104,22 +104,22 @@ def test_arxiv_no_init_method():
 
 
 # ---------------------------------------------------------------------------
-# 4. LegacyModelNode must raise ValueError
+# 4. SageLLMNode must raise ValueError (renamed from LegacyModelNode)
 # ---------------------------------------------------------------------------
 
 
 def test_legacy_model_node_raises_not_returns_none():
-    """The LegacyModelNode branch must raise ValueError, not silently return None."""
+    """The SageLLMNode branch must raise ValueError, not silently return None."""
     src = _read("services", "playground_executor.py")
-    assert "LegacyModelNode" in src
-    # Old silent pattern gone
-    assert 'logger.warning("LegacyModelNode' not in src
-    # New fail-fast pattern present
+    assert "SageLLMNode" in src
+    # Old silent warning pattern gone
+    assert 'logger.warning("SageLLMNode' not in src
+    # Fail-fast pattern present
     assert "raise ValueError" in src
-    # Verify the raise is adjacent to LegacyModelNode
-    idx = src.index("LegacyModelNode")
+    # Verify the raise is adjacent to SageLLMNode
+    idx = src.index("SageLLMNode")
     nearby = src[idx : idx + 200]
-    assert "raise ValueError" in nearby, "ValueError not raised in the LegacyModelNode branch"
+    assert "raise ValueError" in nearby, "ValueError not raised in the SageLLMNode branch"
 
 
 # ---------------------------------------------------------------------------
