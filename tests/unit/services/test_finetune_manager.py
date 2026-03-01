@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 from sage_libs.sage_finetune import FinetuneManager, FinetuneStatus
 
 

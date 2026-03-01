@@ -7,7 +7,6 @@ import uuid
 import pytest
 import requests
 
-
 pytestmark = pytest.mark.integration
 
 

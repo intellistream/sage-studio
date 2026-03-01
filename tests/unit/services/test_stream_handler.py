@@ -1,8 +1,8 @@
 """Unit tests for StreamHandler and SSEFormatter."""
 
 import json
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import AsyncGenerator
 
 import pytest
 from starlette.responses import StreamingResponse

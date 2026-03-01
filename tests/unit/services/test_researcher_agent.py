@@ -72,21 +72,19 @@ async def test_researcher_agent_no_results():
 
 @pytest.mark.asyncio
 async def test_researcher_agent_with_refiner(monkeypatch):
-    # Mock RefinerService
+    # Mock RefinerService at its source module so the local import inside __init__ picks it up.
+    import sys
+
     mock_refiner = MagicMock()
     mock_result = MagicMock()
     mock_result.documents = [{"source": "refined_source", "content": "Refined Content"}]
     mock_refiner.refine.return_value = mock_result
 
-    # Patch the class in the module
-    # Note: We need to patch where it's imported or used.
-    # Since ResearcherAgent instantiates it in __init__, we can pass a mock if we modify __init__
-    # or patch the class before instantiation.
-
-    # Let's patch the class in the module
-    import sage.studio.services.agents.researcher as researcher_module
-
-    monkeypatch.setattr(researcher_module, "RefinerService", MagicMock(return_value=mock_refiner))
+    monkeypatch.setattr(
+        sys.modules["sage.middleware.components.sage_refiner.python.service"],
+        "RefinerService",
+        MagicMock(return_value=mock_refiner),
+    )
 
     # Setup
     tool = MockAsyncTool()

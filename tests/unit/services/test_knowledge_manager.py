@@ -32,20 +32,20 @@ embedding:
 
 @pytest.fixture
 def knowledge_manager(mock_config_file):
-    with patch("sage.studio.services.document_loader.DocumentLoader") as MockLoader:
+    with patch("sage.studio.services.document_loader.DocumentLoader") as mock_loader:
         manager = KnowledgeManager(config_path=mock_config_file)
-        manager._doc_loader = MockLoader.return_value
+        manager._doc_loader = mock_loader.return_value
         yield manager
 
 
 @pytest.mark.asyncio
 async def test_ensure_source_loaded(knowledge_manager):
     # Mock VectorStore
-    with patch("sage.studio.services.vector_store.VectorStore") as MockVectorStore:
+    with patch("sage.studio.services.vector_store.VectorStore") as mock_vector_store:
         mock_vs = MagicMock()
         mock_vs.has_data.return_value = False
         mock_vs.add_documents = AsyncMock(return_value=10)
-        MockVectorStore.return_value = mock_vs
+        mock_vector_store.return_value = mock_vs
 
         # Mock DocumentLoader
         knowledge_manager._doc_loader.load_directory.return_value = ["chunk1", "chunk2"]
@@ -62,13 +62,13 @@ async def test_ensure_source_loaded(knowledge_manager):
 @pytest.mark.asyncio
 async def test_search(knowledge_manager):
     # Mock VectorStore
-    with patch("sage.studio.services.vector_store.VectorStore") as MockVectorStore:
+    with patch("sage.studio.services.vector_store.VectorStore") as mock_vector_store:
         mock_vs = AsyncMock()
         mock_result = MagicMock()
         mock_result.score = 0.9
         mock_result.content = "test content"
         mock_vs.search.return_value = [mock_result]
-        MockVectorStore.return_value = mock_vs
+        mock_vector_store.return_value = mock_vs
 
         # Pre-load source
         knowledge_manager._loaded_sources.add("test_source")
@@ -89,10 +89,10 @@ async def test_add_document(knowledge_manager, tmp_path):
     test_file.write_text("# Test")
 
     # Mock VectorStore
-    with patch("sage.studio.services.vector_store.VectorStore") as MockVectorStore:
+    with patch("sage.studio.services.vector_store.VectorStore") as mock_vector_store:
         mock_vs = AsyncMock()
         mock_vs.add_documents.return_value = 1
-        MockVectorStore.return_value = mock_vs
+        mock_vector_store.return_value = mock_vs
 
         # Mock DocumentLoader
         knowledge_manager._doc_loader.load_file.return_value = ["chunk"]

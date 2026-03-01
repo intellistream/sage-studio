@@ -11,11 +11,6 @@ from sage.studio.models.agent_step import AgentStep
 from sage.studio.services.agents.base import BaseAgent
 from sage.studio.tools.base import BaseTool
 
-try:
-    from sage.middleware.components.sage_refiner.python.service import RefinerService
-except ImportError:
-    RefinerService = None
-
 logger = logging.getLogger(__name__)
 
 
@@ -34,17 +29,9 @@ class ResearcherAgent(BaseAgent):
         self.bot = SearcherBot(tools=tools)
 
         # Initialize L4 Refiner
-        if RefinerService:
-            try:
-                self.refiner = RefinerService()
-            except Exception as e:
-                logger.warning(f"Failed to initialize RefinerService: {e}")
-                self.refiner = None
-        else:
-            self.refiner = None
-            logger.warning(
-                "RefinerService not available (sage-middleware not installed or import failed)"
-            )
+        from sage.middleware.components.sage_refiner.python.service import RefinerService
+
+        self.refiner = RefinerService()
 
     async def run(self, query: str, history: list[dict] = None) -> AsyncGenerator[AgentStep, None]:
         """

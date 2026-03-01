@@ -277,9 +277,7 @@ class KnowledgeManager:
 
         try:
             asyncio.get_running_loop()
-            logger.info(
-                "Skip auto-load in active event loop; sources will be loaded on demand"
-            )
+            logger.info("Skip auto-load in active event loop; sources will be loaded on demand")
             return
         except RuntimeError:
             pass
@@ -571,7 +569,7 @@ class KnowledgeManager:
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
-import threading as _threading
+import threading as _threading  # noqa: E402
 
 _km_instance: KnowledgeManager | None = None
 _km_lock = _threading.Lock()

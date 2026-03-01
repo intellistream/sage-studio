@@ -190,7 +190,7 @@ class PlaygroundExecutor:
                 for port in [
                     StudioPorts.get_recommended_llm_port(),
                     StudioPorts.LLM_DEFAULT,
-                    StudioPorts.BENCHMARK_LLM,
+                    StudioPorts.SAGELLM_SERVE_PORT,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate, timeout=1.0):
@@ -504,10 +504,7 @@ class PlaygroundExecutor:
                 return RefinerOperator
 
             elif operator_type == "LegacyModelNode":
-                # TODO: 添加历史模型节点支持
-                # Issue URL: https://github.com/intellistream/SAGE/issues/1107
-                logger.warning("LegacyModelNode 暂不支持")
-                return None
+                raise ValueError("LegacyModelNode 已移除，请迁移到当前支持的操作符类型")
 
             else:
                 logger.warning(f"未知的操作符类型: {operator_type}")

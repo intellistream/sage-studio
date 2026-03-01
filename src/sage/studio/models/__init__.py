@@ -7,7 +7,7 @@ Studio Pipeline 数据模型
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 # Agent Step 模型（Multi-Agent 系统）
 from sage.studio.models.agent_step import (

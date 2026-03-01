@@ -2,6 +2,8 @@
 Tests for PipelineBuilder - Visual Pipeline to SAGE Pipeline conversion
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from sage.studio.models import (  # type: ignore[import-not-found]
@@ -12,8 +14,28 @@ from sage.studio.models import (  # type: ignore[import-not-found]
 from sage.studio.services import PipelineBuilder  # type: ignore[import-not-found]
 
 
+def _make_mock_registry():
+    """Return a minimal NodeRegistry mock for structural tests."""
+    mock = MagicMock()
+    mock.list_types.return_value = ["map", "retriever", "generator", "file_source"]
+    mock.get.side_effect = lambda t: {
+        "retriever": MagicMock(),
+        "file_source": MagicMock(),
+        "generator": MagicMock(),
+    }.get(t)
+    return mock
+
+
 class TestPipelineBuilder:
     """测试 PipelineBuilder 功能"""
+
+    @pytest.fixture(autouse=True)
+    def patch_node_registry(self, monkeypatch):
+        """Patch node registry so structural unit tests don't require sage.middleware."""
+        monkeypatch.setattr(
+            "sage.studio.services.pipeline_builder.get_node_registry",
+            _make_mock_registry,
+        )
 
     def test_builder_initialization(self):
         """测试 Builder 初始化"""

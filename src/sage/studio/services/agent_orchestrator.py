@@ -30,6 +30,11 @@ from sage.studio.services.agents.coding import CodingAgent
 from sage.studio.services.agents.researcher import ResearcherAgent
 from sage.studio.services.knowledge_manager import KnowledgeManager
 from sage.studio.services.memory_integration import get_memory_service
+from sage.studio.tools.arxiv_search import ArxivSearchTool
+from sage.studio.tools.base import get_tool_registry
+from sage.studio.tools.code_writing import FileReadTool, FileWriteTool, ListDirectoryTool
+from sage.studio.tools.knowledge_search import KnowledgeSearchTool
+from sage.studio.tools.middleware_adapter import NatureNewsTool
 
 logger = logging.getLogger(__name__)
 
@@ -46,25 +51,8 @@ class AgentOrchestrator:
         self.workflow_router = WorkflowRouter(self.intent_classifier)
         self.knowledge_manager = KnowledgeManager()
 
-        # 尝试获取工具注册表
-        try:
-            from sage.studio.tools.base import get_tool_registry
-
-            self.tools = get_tool_registry()
-        except ImportError:
-            logger.warning("ToolRegistry not found, tools will be unavailable.")
-
-            class MockRegistry:
-                def get(self, name):
-                    return None
-
-                def register(self, tool):
-                    pass
-
-                def list_tools(self):
-                    return []
-
-            self.tools = MockRegistry()
+        # 获取工具注册表
+        self.tools = get_tool_registry()
 
         # 注册内置工具
         self._register_builtin_tools()
@@ -78,32 +66,13 @@ class AgentOrchestrator:
 
     def _register_builtin_tools(self):
         """注册内置工具"""
-        try:
-            from sage.studio.tools.arxiv_search import ArxivSearchTool
-            from sage.studio.tools.knowledge_search import KnowledgeSearchTool
-            from sage.studio.tools.middleware_adapter import NatureNewsTool
-
-            self.tools.register(KnowledgeSearchTool(self.knowledge_manager))
-            self.tools.register(ArxivSearchTool())
-
-            # 注册新的 Middleware 适配工具
-            self.tools.register(NatureNewsTool())
-        except ImportError as e:
-            logger.warning(f"Builtin tools not found or failed to load: {e}")
+        self.tools.register(KnowledgeSearchTool(self.knowledge_manager))
+        self.tools.register(ArxivSearchTool())
+        self.tools.register(NatureNewsTool())
 
     def _build_code_tools(self) -> list:
         """Build the FS tools passed to CodingAgent/CoderBot at request time."""
-        try:
-            from sage.studio.tools.code_writing import (
-                FileReadTool,
-                FileWriteTool,
-                ListDirectoryTool,
-            )
-
-            return [FileWriteTool(), FileReadTool(), ListDirectoryTool()]
-        except ImportError as exc:
-            logger.warning("code_writing tools unavailable: %s", exc)
-            return []
+        return [FileWriteTool(), FileReadTool(), ListDirectoryTool()]
 
     def _make_step(
         self, type: str, content: str, status: str = "completed", **metadata
@@ -333,8 +302,12 @@ class AgentOrchestrator:
             async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
                 resp = await client.post(
                     f"{base_url}/v1/chat/completions",
-                    json={"model": "sage-default", "messages": messages, "stream": False,
-                          "session_id": session_id},
+                    json={
+                        "model": "sage-default",
+                        "messages": messages,
+                        "stream": False,
+                        "session_id": session_id,
+                    },
                 )
         except httpx.ConnectError:
             raise RuntimeError(
@@ -484,9 +457,7 @@ class AgentOrchestrator:
                     if resp.status_code != 200:
                         body = await resp.aread()
                         detail = body.decode(errors="replace")[:200]
-                        raise RuntimeError(
-                            f"LLM Gateway error ({resp.status_code}): {detail}"
-                        )
+                        raise RuntimeError(f"LLM Gateway error ({resp.status_code}): {detail}")
                     async for line in resp.aiter_lines():
                         if not line.startswith("data: "):
                             continue

@@ -14,6 +14,7 @@ from pathlib import Path
 import psutil
 import requests
 from rich.console import Console
+from rich.prompt import Confirm
 from rich.table import Table
 from sage.common.config.user_paths import get_user_paths
 
@@ -326,7 +327,7 @@ class StudioManager:
             response = requests.get(
                 f"http://localhost:{self.gateway_port}/health",
                 timeout=1,
-                proxies={"http": None, "https": None}  # 禁用代理
+                proxies={"http": None, "https": None},  # 禁用代理
             )
             if response.status_code == 200:
                 # Gateway 在运行但没有 PID 文件，尝试找到进程
@@ -363,7 +364,9 @@ class StudioManager:
 
         # 并发启动保护：端口已占用时先短暂等待，避免误判 "Address already in use"
         if self._is_port_in_use(port):
-            console.print(f"[yellow]⚠️  Gateway 端口 {port} 已被占用，正在确认是否已有实例启动...[/yellow]")
+            console.print(
+                f"[yellow]⚠️  Gateway 端口 {port} 已被占用，正在确认是否已有实例启动...[/yellow]"
+            )
             for _ in range(10):
                 time.sleep(0.5)
                 existing_pid = self.is_gateway_running()
@@ -371,12 +374,12 @@ class StudioManager:
                     if existing_pid == -1:
                         console.print("[green]✅ 检测到 Gateway 已由其他进程启动[/green]")
                     else:
-                        console.print(f"[green]✅ 检测到 Gateway 已由其他进程启动 (PID: {existing_pid})[/green]")
+                        console.print(
+                            f"[green]✅ 检测到 Gateway 已由其他进程启动 (PID: {existing_pid})[/green]"
+                        )
                     return True
 
-            console.print(
-                f"[red]❌ 端口 {port} 被占用，但未探测到可用 Gateway 健康检查[/red]"
-            )
+            console.print(f"[red]❌ 端口 {port} 被占用，但未探测到可用 Gateway 健康检查[/red]")
             console.print("[yellow]   请检查占用进程或设置 SAGE_GATEWAY_PORT 后重试[/yellow]")
             return False
 
@@ -467,14 +470,14 @@ class StudioManager:
             int: 进程 PID，如果未运行返回 None
         """
         # 方法1: 通过端口检查（探测 LLM Gateway）
-        llm_ports = [8001, 8901]  # LLM_DEFAULT, BENCHMARK_LLM
+        llm_ports = [StudioPorts.LLM_DEFAULT, StudioPorts.SAGELLM_SERVE_PORT]
 
         for port in llm_ports:
             try:
                 response = requests.get(
                     f"http://localhost:{port}/v1/models",
                     timeout=1,
-                    proxies={"http": None, "https": None}
+                    proxies={"http": None, "https": None},
                 )
                 if response.status_code == 200:
                     # Control Plane Gateway 可能尚未注册引擎，models 为空也视为运行中
@@ -586,7 +589,9 @@ class StudioManager:
             console.print("   [dim]使用 sageLLM Core CPU backend...[/dim]")
 
             # 创建启动脚本（使用 sageLLM Core API）
-            engine_script = self._create_sagellm_cpu_engine_script(default_model, engine_port, engine_log)
+            engine_script = self._create_sagellm_cpu_engine_script(
+                default_model, engine_port, engine_log
+            )
 
             # 后台启动引擎
             with open(engine_log, "w") as f:
@@ -594,7 +599,7 @@ class StudioManager:
                     [sys.executable, str(engine_script)],
                     stdout=f,
                     stderr=subprocess.STDOUT,
-                    start_new_session=True
+                    start_new_session=True,
                 )
 
             # 等待引擎启动并注册到 Gateway
@@ -688,12 +693,12 @@ class StudioManager:
 
     def _create_sagellm_cpu_engine_script(self, model: str, port: int, log_file: Path) -> Path:
         """创建 sageLLM CPU engine 启动脚本
-        
+
         Args:
             model: 模型路径
             port: 服务端口
             log_file: 日志文件路径
-            
+
         Returns:
             脚本文件路径
         """
@@ -764,11 +769,11 @@ model_name = "{model}"
 async def initialize_engine():
     """Initialize the LLM engine."""
     global engine
-    
+
     print(f"🚀 Starting sageLLM CPU Engine...")
     print(f"   Model: {{model_name}}")
     print(f"   Backend: CPU")
-    
+
     try:
         config = LLMEngineConfig(
             model_path=model_name,
@@ -777,12 +782,12 @@ async def initialize_engine():
             dtype="bfloat16",
             trust_remote_code=True,
         )
-        
+
         engine = LLMEngine(config)
         await engine.start()
-        
+
         print(f"✅ Engine initialized successfully")
-        
+
     except Exception as e:
         print(f"❌ Engine initialization failed: {{e}}", file=sys.stderr)
         import traceback
@@ -836,25 +841,25 @@ async def chat_completions(request: ChatCompletionRequest):
     """Chat completions endpoint (OpenAI-compatible) with streaming support."""
     if engine is None:
         raise HTTPException(status_code=503, detail="Engine not initialized")
-    
+
     try:
         import time as time_module
         import uuid
         import json
         from fastapi.responses import StreamingResponse
         from sagellm_protocol.types import ChatMessage as SageChatMessage
-        
+
         request_id = f"chatcmpl-{{int(time_module.time())}}"
-        
+
         # Reduce max_tokens for faster response on CPU
         max_tokens = min(request.max_tokens or 50, 50)
-        
+
         # Convert to sagellm ChatMessage list — engine handles chat template
         sage_messages = [
             SageChatMessage(role=msg.role, content=msg.content)
             for msg in request.messages
         ]
-        
+
         # Streaming response
         if request.stream:
             async def generate_stream():
@@ -867,7 +872,7 @@ async def chat_completions(request: ChatCompletionRequest):
                     temperature=request.temperature or 0.7,
                     stream=True,
                 )
-                
+
                 try:
                     async for chunk in engine.stream(llm_request):
                         # StreamEventDelta and StreamEventEnd both have .content
@@ -886,7 +891,7 @@ async def chat_completions(request: ChatCompletionRequest):
                                 }}]
                             }}
                             yield f"data: {{json.dumps(chunk_data)}}\\n\\n"
-                    
+
                     # Send final chunk
                     final_chunk = {{
                         "id": request_id,
@@ -901,15 +906,15 @@ async def chat_completions(request: ChatCompletionRequest):
                     }}
                     yield f"data: {{json.dumps(final_chunk)}}\\n\\n"
                     yield "data: [DONE]\\n\\n"
-                    
+
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
                     error_data = {{"error": str(e)}}
                     yield f"data: {{json.dumps(error_data)}}\\n\\n"
-            
+
             return StreamingResponse(generate_stream(), media_type="text/event-stream")
-        
+
         # Non-streaming response
         llm_request = SageLLMRequest(
             request_id=str(uuid.uuid4()),
@@ -920,10 +925,10 @@ async def chat_completions(request: ChatCompletionRequest):
             temperature=request.temperature or 0.7,
             stream=False,
         )
-        
+
         response = await engine.execute(llm_request)
         output_text = response.output_text
-        
+
         # Format OpenAI-compatible response
         return ChatCompletionResponse(
             id=request_id,
@@ -942,7 +947,7 @@ async def chat_completions(request: ChatCompletionRequest):
                 total_tokens=len(output_text.split()) * 2
             )
         )
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -953,7 +958,7 @@ if __name__ == "__main__":
     port = {port}
     print(f"   Starting HTTP server on http://0.0.0.0:{{port}}")
     print(f"   Press Ctrl+C to stop")
-    
+
     uvicorn.run(
         app,
         host="0.0.0.0",
@@ -995,7 +1000,7 @@ if __name__ == "__main__":
 
     def check_dependencies(self) -> bool:
         """检查依赖"""
-        MIN_NODE_VERSION = 20  # Vite 7.x 需要 Node.js 20.19+，推荐 22+
+        MIN_NODE_VERSION = 20  # Vite 7.x 需要 Node.js 20.19+，推荐 22+  # noqa: N806
 
         # 检查 Node.js
         try:
@@ -1653,7 +1658,9 @@ if __name__ == "__main__":
             if not self._is_port_in_use(try_port):
                 selected_port = try_port
                 if try_port != backend_port:
-                    console.print(f"[yellow]端口 {backend_port} 被占用，自动切换到端口 {try_port}[/yellow]")
+                    console.print(
+                        f"[yellow]端口 {backend_port} 被占用，自动切换到端口 {try_port}[/yellow]"
+                    )
                 break
 
         if selected_port is None:
@@ -1889,8 +1896,12 @@ if __name__ == "__main__":
         backend_startup_success = self.start_backend(port=backend_port)
         if not backend_startup_success:
             console.print("[yellow]⚠️  后端API启动失败，某些功能可能无法使用[/yellow]")
-            console.print("[yellow]   注意：Studio 需要独立的后端来管理 SAGE pipelines 和组件[/yellow]")
-            console.print("[yellow]   如果端口冲突，可以设置环境变量: STUDIO_BACKEND_PORT=8081[/yellow]")
+            console.print(
+                "[yellow]   注意：Studio 需要独立的后端来管理 SAGE pipelines 和组件[/yellow]"
+            )
+            console.print(
+                "[yellow]   如果端口冲突，可以设置环境变量: STUDIO_BACKEND_PORT=8081[/yellow]"
+            )
 
         # 🆕 智能端口冲突解决 (Smart Port Conflict Resolution)
         # 解决场景：配置文件中保存了旧端口 (如 5173)，但该端口被其他服务占用 (如 Prod 环境)，
@@ -1950,13 +1961,7 @@ if __name__ == "__main__":
 
                 if not skip_confirm:
                     console.print("[yellow]是否立即安装？这可能需要几分钟时间...[/yellow]")
-                    try:
-                        from rich.prompt import Confirm
-
-                        should_install = Confirm.ask("[cyan]开始安装依赖?[/cyan]", default=True)
-                    except ImportError:
-                        # 如果没有 rich.prompt，直接安装
-                        should_install = True
+                    should_install = Confirm.ask("[cyan]开始安装依赖?[/cyan]", default=True)
 
                 if should_install:
                     console.print("[blue]开始安装依赖...[/blue]")
@@ -2017,13 +2022,7 @@ if __name__ == "__main__":
 
                         if not skip_confirm:
                             console.print("[yellow]是否立即构建？这可能需要几分钟时间...[/yellow]")
-                            try:
-                                from rich.prompt import Confirm
-
-                                should_build = Confirm.ask("[cyan]开始构建?[/cyan]", default=True)
-                            except ImportError:
-                                # 如果没有 rich.prompt，直接构建
-                                should_build = True
+                            should_build = Confirm.ask("[cyan]开始构建?[/cyan]", default=True)
 
                         if should_build:
                             console.print("[blue]开始构建...[/blue]")
@@ -2158,7 +2157,9 @@ if __name__ == "__main__":
             # killing by port so restart always starts with a clean slate.
             _cfg = self.load_config()
             _backend_port = _cfg.get("backend_port", self.backend_port)
-            console.print(f"[yellow]检测到后端API在端口 {_backend_port} 运行（无PID文件），尝试通过端口清理...[/yellow]")
+            console.print(
+                f"[yellow]检测到后端API在端口 {_backend_port} 运行（无PID文件），尝试通过端口清理...[/yellow]"
+            )
             if self._kill_process_on_port(_backend_port):
                 if self.backend_pid_file.exists():
                     self.backend_pid_file.unlink()

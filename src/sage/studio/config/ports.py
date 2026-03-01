@@ -23,8 +23,6 @@ Group 3 · Embedding Services
   8090   EMBEDDING_DEFAULT   Primary embedding server (e.g. BAAI/bge-*)
   8091   EMBEDDING_SECONDARY Secondary embedding instance
 
-─── Backward-Compat Aliases ─────────────────────────────────────────
-  BENCHMARK_LLM  = SAGELLM_SERVE_PORT (8901) — deprecated name, same port
 ───────────────────────────────────────────────────────────────────────
 """
 
@@ -62,13 +60,6 @@ class StudioPorts:
     # =========================================================================
     EMBEDDING_DEFAULT = 8090  # Primary embedding server (e.g. BAAI/bge-large-zh-v1.5)
     EMBEDDING_SECONDARY = 8091  # Secondary embedding instance
-
-    # =========================================================================
-    # Backward-compat aliases (deprecated — use the named constants above)
-    # =========================================================================
-    BENCHMARK_LLM = 8901  # Deprecated → SAGELLM_SERVE_PORT
-    BENCHMARK_EMBEDDING = 8091  # Deprecated → EMBEDDING_SECONDARY
-    LLM_WSL_FALLBACK = 8901  # Deprecated → SAGELLM_SERVE_PORT
 
     @classmethod
     def get_frontend_port(cls) -> int:

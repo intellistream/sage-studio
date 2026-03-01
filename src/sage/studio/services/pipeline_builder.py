@@ -226,7 +226,9 @@ class PipelineBuilder:
                     self._env_config = env_vars  # 缓存配置
                     for key, value in env_vars.items():
                         os.environ[key] = value
-                logger.info("Loaded Studio environment config", extra={"keys": list(env_vars.keys())})
+                logger.info(
+                    "Loaded Studio environment config", extra={"keys": list(env_vars.keys())}
+                )
             except Exception as e:
                 logger.error("Failed to load Studio environment config", extra={"error": str(e)})
         else:
@@ -297,7 +299,7 @@ class PipelineBuilder:
                 for port in [
                     StudioPorts.get_recommended_llm_port(),
                     StudioPorts.LLM_DEFAULT,
-                    StudioPorts.BENCHMARK_LLM,
+                    StudioPorts.SAGELLM_SERVE_PORT,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate):
