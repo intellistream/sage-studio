@@ -857,7 +857,7 @@ class ChatModeManager(StudioManager):
         embedding_cmd = [
             sys.executable,
             "-m",
-            "sage.common.components.sage_embedding.embedding_server",
+            "sagellm_core.embedding_server",
             "--model",
             model_name,
             "--port",

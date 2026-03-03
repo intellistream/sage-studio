@@ -5,7 +5,7 @@ This module provides a thin wrapper around sage-mem's VDBMemoryCollection
 for knowledge base vector storage and retrieval in SAGE Studio.
 
 Layer: L6 (sage-studio)
-Dependencies: sage-middleware (sage-mem/neuromem), sage-common (embedding)
+Dependencies: sage-middleware (sage-mem/neuromem), sagellm (embedding)
 
 Design Principles:
 - Reuses existing neuromem VDBMemoryCollection implementation
@@ -24,7 +24,7 @@ import numpy as np
 from sage.common.config.user_paths import get_user_paths
 
 if TYPE_CHECKING:
-    from sage.common.components.sage_embedding.protocols import EmbeddingProtocol
+    from sagellm.embedding import EmbeddingProtocol
 
 
 @dataclass
@@ -133,10 +133,13 @@ class VectorStore:
 
     def _create_embedder(self) -> EmbeddingProtocol:
         """创建 embedding 客户端"""
-        from sage.common.components.sage_embedding import (
-            EmbeddingFactory,
-            adapt_embedding_client,
-        )
+        try:
+            from sagellm.embedding import EmbeddingFactory, adapt_embedding_client
+        except ImportError as exc:
+            raise ImportError(
+                "sagellm.embedding is required for Studio VectorStore embedding support. "
+                "Please install isagellm in this environment."
+            ) from exc
 
         # 创建 HuggingFace embedding 模型
         raw_embedder = EmbeddingFactory.create(
