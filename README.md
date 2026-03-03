@@ -806,8 +806,8 @@ tail -f /tmp/sage-studio-backend.log
 
 # 检查 SAGE 安装
 python -c "from sage.kernel.api import LocalEnvironment; print('✓ kernel OK')"
-python -c "from sage.middleware.rag import OpenAIGenerator; print('✓ middleware OK')"
-python -c "from sage.libs.io.source import FileSource; print('✓ libs OK')"
+python -c "from sage.middleware.operators.rag import OpenAIGenerator; print('✓ middleware OK')"
+python -c "from sage.libs.foundation.io.source import FileSource; print('✓ libs OK')"
 ```
 
 **可能原因**:
