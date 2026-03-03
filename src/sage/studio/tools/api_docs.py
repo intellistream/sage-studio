@@ -31,8 +31,7 @@ class APIDocsInput(BaseModel):
     symbol: str = Field(
         ...,
         description=(
-            "要查询的 Python 符号路径，如 'sagellm.LLMEngine' "
-            "或 'sage.studio.tools.BaseTool'"
+            "要查询的 Python 符号路径，如 'sagellm.LLMEngine' 或 'sage.studio.tools.BaseTool'"
         ),
         min_length=1,
         max_length=500,

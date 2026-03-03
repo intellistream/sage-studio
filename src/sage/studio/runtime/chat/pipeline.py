@@ -50,7 +50,9 @@ def build_chat_pipeline(
     @fn.flow
     def chat_pipeline(stream):
         with fn.exception_handler(actor_refs.error_handler_ref):
-            normalized = stream.filter(actor_refs.session_filter_ref).map(actor_refs.extract_message_ref)
+            normalized = stream.filter(actor_refs.session_filter_ref).map(
+                actor_refs.extract_message_ref
+            )
             normalized = _apply_pre_partition_extensions(normalized, settings=settings)
 
             if partition_plan is not None:
@@ -68,13 +70,10 @@ def build_chat_pipeline(
                     stage_id=settings.stage_id,
                 )
 
-            processed = (
-                partitioned
-                .process_with_state(
-                    actor_refs.process_state_ref,
-                    state_spec={"key_field": "session_id"},
-                    state_ttl_s=settings.state_ttl_s,
-                )
+            processed = partitioned.process_with_state(
+                actor_refs.process_state_ref,
+                state_spec={"key_field": "session_id"},
+                state_ttl_s=settings.state_ttl_s,
             )
             processed = _apply_post_state_extensions(processed, settings=settings)
             events = processed.flatmap(actor_refs.generate_response_ref)

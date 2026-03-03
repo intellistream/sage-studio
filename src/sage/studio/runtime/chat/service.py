@@ -342,10 +342,7 @@ class _SharedChatDispatcher:
             StageEventState.CANCELLED,
         } or (
             event.state == StageEventState.SUCCEEDED
-            and (
-                event.stage.startswith("chat.generation")
-                or event.stage.endswith(".error")
-            )
+            and (event.stage.startswith("chat.generation") or event.stage.endswith(".error"))
         )
         for runtime_request_id in runtime_ids:
             self._emit_item(runtime_request_id, item)

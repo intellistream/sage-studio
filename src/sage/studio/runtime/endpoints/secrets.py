@@ -32,7 +32,7 @@ def decrypt_endpoint_secret(secret: str | None) -> str | None:
         # Backward compatibility for legacy plaintext values.
         return normalized
 
-    token = normalized[len(_CIPHERTEXT_PREFIX):]
+    token = normalized[len(_CIPHERTEXT_PREFIX) :]
     try:
         decrypted = _get_fernet().decrypt(token.encode("utf-8"))
     except InvalidToken as exc:

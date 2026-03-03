@@ -55,7 +55,9 @@ def _ensure_runtime_ready() -> None:
     fn.configure_runtime(FlownetConfig(host="127.0.0.1", port=runtime_port, threads=2))
 
 
-def _resolve_chat_partitioning(settings: ChatPipelineSettings) -> tuple[Any | None, list[str] | None]:
+def _resolve_chat_partitioning(
+    settings: ChatPipelineSettings,
+) -> tuple[Any | None, list[str] | None]:
     resolve_plan_enabled = os.environ.get("STUDIO_CHAT_ENABLE_RESOLVE_PLAN", "0").strip().lower()
     if resolve_plan_enabled in {"1", "true", "yes", "on"}:
         request_id = os.environ.get(

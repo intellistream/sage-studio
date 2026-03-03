@@ -76,7 +76,9 @@ def build_canvas_router() -> APIRouter:
     router = APIRouter(tags=["canvas"])
 
     @router.post("/api/canvas/v1/graphs/validate", response_model=CanvasGraphValidationResponse)
-    async def validate_canvas_graph_route(req: CanvasGraphValidatePayload) -> CanvasGraphValidationResponse:
+    async def validate_canvas_graph_route(
+        req: CanvasGraphValidatePayload,
+    ) -> CanvasGraphValidationResponse:
         errors: list[str] = []
         if not req.nodes:
             errors.append("nodes must not be empty")
@@ -111,7 +113,9 @@ def build_canvas_router() -> APIRouter:
         )
 
     @router.post("/api/canvas/v1/graphs/publish", response_model=CanvasGraphPublishResponse)
-    async def publish_canvas_graph_route(req: CanvasGraphPublishPayload) -> CanvasGraphPublishResponse:
+    async def publish_canvas_graph_route(
+        req: CanvasGraphPublishPayload,
+    ) -> CanvasGraphPublishResponse:
         graph_id = (req.graph_id or "").strip() or f"graph-{int(datetime.now().timestamp())}"
         program_id = (req.program_id or "").strip() or graph_id
         version = req.version or "1.0.0"

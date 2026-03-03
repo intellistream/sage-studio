@@ -33,9 +33,7 @@ def _resolve_safe_path(workspace_root: Path, relative_path: str) -> Path:
     target = (workspace_root / relative_path).resolve()
     workspace_resolved = workspace_root.resolve()
     if not str(target).startswith(str(workspace_resolved)):
-        raise ValueError(
-            f"路径穿越攻击检测: '{relative_path}' 超出工作区 '{workspace_root}'"
-        )
+        raise ValueError(f"路径穿越攻击检测: '{relative_path}' 超出工作区 '{workspace_root}'")
     return target
 
 
@@ -148,8 +146,7 @@ class ListDirectoryTool(BaseTool):
 
     name: ClassVar[str] = "list_directory"
     description: ClassVar[str] = (
-        "列出工作区中指定目录的文件和子目录树形结构。"
-        "用于了解项目当前文件布局。"
+        "列出工作区中指定目录的文件和子目录树形结构。用于了解项目当前文件布局。"
     )
     args_schema: ClassVar[type[BaseModel]] = ListDirectoryInput
 

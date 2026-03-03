@@ -29,7 +29,10 @@ def bootstrap_dashscope_endpoint_from_env() -> None:
         if not api_key:
             return
 
-        endpoint_id = os.environ.get("STUDIO_DASHSCOPE_ENDPOINT_ID", "ep-dashscope-default").strip() or "ep-dashscope-default"
+        endpoint_id = (
+            os.environ.get("STUDIO_DASHSCOPE_ENDPOINT_ID", "ep-dashscope-default").strip()
+            or "ep-dashscope-default"
+        )
         endpoint = os.environ.get(
             "STUDIO_DASHSCOPE_ENDPOINT",
             "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
@@ -60,7 +63,7 @@ def bootstrap_gateway_endpoint_from_env() -> None:
 
     Uses a synchronous HTTP call so it can be invoked from worker threads.
     Embedding-only models (bge-*, embed*, etc.) are excluded.
-    Uses a local synthetic token ``sk-local`` so unified auth handling can stay consistent.
+    Uses a local synthetic token ``local-token`` so unified auth handling can stay consistent.
     """
     global _GATEWAY_BOOTSTRAPPED
 
@@ -91,9 +94,7 @@ def bootstrap_gateway_endpoint_from_env() -> None:
 
         raw_models: list[dict] = data.get("data", [])
         chat_model_ids = tuple(
-            m["id"]
-            for m in raw_models
-            if m.get("id") and not _is_embedding_model(m["id"])
+            m["id"] for m in raw_models if m.get("id") and not _is_embedding_model(m["id"])
         )
 
         if not chat_model_ids:
@@ -119,7 +120,7 @@ def bootstrap_gateway_endpoint_from_env() -> None:
                 model_ids=chat_model_ids,
                 enabled=True,
                 is_default=(not has_existing),
-                api_key="sk-local",  # local synthetic token for unified auth handling
+                api_key="local-token",  # local synthetic token for unified auth handling
             )
         )
         _GATEWAY_BOOTSTRAPPED = True
@@ -193,7 +194,7 @@ def bootstrap_local_llm_endpoint_from_env() -> None:
                 model_ids=discovered_model_ids,
                 enabled=True,
                 is_default=(not has_existing),
-                api_key="sk-local",
+                api_key="local-token",
             )
         )
 

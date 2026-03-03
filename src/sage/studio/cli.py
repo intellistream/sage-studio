@@ -40,9 +40,7 @@ def start(
     ),
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
     dev: bool = typer.Option(True, "--dev/--prod", help="Development or production mode"),
-    skip_confirm: bool = typer.Option(
-        False, "--yes", "-y", help="Skip confirmation prompts"
-    ),
+    skip_confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
 ):
     """Start SAGE Studio (frontend + backend)."""
     manager = _get_studio_manager()
@@ -57,15 +55,9 @@ def start(
 
 @app.command()
 def stop(
-    stop_gateway: bool = typer.Option(
-        False, "--stop-gateway", help="Also stop gateway service"
-    ),
-    stop_llm: bool = typer.Option(
-        False, "--stop-llm", help="Also stop LLM service"
-    ),
-    stop_all: bool = typer.Option(
-        False, "--all", help="Stop all services (gateway + LLM)"
-    )
+    stop_gateway: bool = typer.Option(False, "--stop-gateway", help="Also stop gateway service"),
+    stop_llm: bool = typer.Option(False, "--stop-llm", help="Also stop LLM service"),
+    stop_all: bool = typer.Option(False, "--all", help="Stop all services (gateway + LLM)"),
 ):
     """Stop SAGE Studio."""
     manager = _get_studio_manager()
@@ -89,9 +81,7 @@ def status():
 def restart(
     frontend_port: int | None = typer.Option(None, "--port", "-p", help="Frontend port"),
     dev: bool = typer.Option(True, "--dev/--prod", help="Development or production mode"),
-    skip_confirm: bool = typer.Option(
-        False, "--yes", "-y", help="Skip confirmation prompts"
-    ),
+    skip_confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
 ):
     """Restart SAGE Studio."""
     manager = _get_studio_manager()

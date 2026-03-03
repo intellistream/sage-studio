@@ -120,10 +120,14 @@ def update_endpoint(endpoint_id: str, command: EndpointPatchRequest) -> Endpoint
         EndpointUpdate(
             display_name=_normalize_optional_text(command.display_name, field="display_name"),
             base_url=_normalize_optional_text(command.base_url, field="base_url"),
-            model_ids=_normalize_model_ids(command.model_ids) if command.model_ids is not None else None,
+            model_ids=_normalize_model_ids(command.model_ids)
+            if command.model_ids is not None
+            else None,
             enabled=command.enabled,
             is_default=command.is_default,
-            extra_headers=_normalize_headers(command.extra_headers) if command.extra_headers is not None else None,
+            extra_headers=_normalize_headers(command.extra_headers)
+            if command.extra_headers is not None
+            else None,
             replace_api_key=command.replace_api_key,
             api_key=_normalize_optional_secret(command.api_key),
         ),

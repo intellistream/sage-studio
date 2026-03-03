@@ -62,11 +62,15 @@ class EndpointRegistry:
             now = datetime.now(timezone.utc)
             updated = replace(
                 current,
-                display_name=command.display_name if command.display_name is not None else current.display_name,
+                display_name=command.display_name
+                if command.display_name is not None
+                else current.display_name,
                 base_url=command.base_url if command.base_url is not None else current.base_url,
                 model_ids=command.model_ids if command.model_ids is not None else current.model_ids,
                 enabled=command.enabled if command.enabled is not None else current.enabled,
-                extra_headers=command.extra_headers if command.extra_headers is not None else current.extra_headers,
+                extra_headers=command.extra_headers
+                if command.extra_headers is not None
+                else current.extra_headers,
                 api_key=(
                     encrypt_endpoint_secret(command.api_key)
                     if command.replace_api_key

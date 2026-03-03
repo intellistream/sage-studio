@@ -77,11 +77,11 @@ class DocumentLoader:
 
         if ignore_file.exists():
             try:
-                with open(ignore_file, encoding='utf-8') as f:
+                with open(ignore_file, encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
                         # Skip empty lines and comments
-                        if line and not line.startswith('#'):
+                        if line and not line.startswith("#"):
                             patterns.append(line)
                 logger.info(f"Loaded {len(patterns)} ignore patterns from {ignore_file}")
             except Exception as e:
@@ -110,13 +110,15 @@ class DocumentLoader:
 
             for pattern in ignore_patterns:
                 # Simple pattern matching: if pattern ends with /, it's a directory
-                if pattern.endswith('/'):
-                    dir_pattern = pattern.rstrip('/')
-                    if rel_path_str.startswith(dir_pattern + '/') or str(file_path.parent).endswith(dir_pattern):
+                if pattern.endswith("/"):
+                    dir_pattern = pattern.rstrip("/")
+                    if rel_path_str.startswith(dir_pattern + "/") or str(file_path.parent).endswith(
+                        dir_pattern
+                    ):
                         return True
                 else:
                     # Exact match or wildcard match
-                    if rel_path_str == pattern or rel_path_str.startswith(pattern + '/'):
+                    if rel_path_str == pattern or rel_path_str.startswith(pattern + "/"):
                         return True
         except ValueError:
             # file_path is not relative to root_path
@@ -160,7 +162,9 @@ class DocumentLoader:
                     # Check if file should be ignored
                     if self._should_ignore(file_path, path, ignore_patterns):
                         ignored_files += 1
-                        logger.debug(f"Ignoring file (matched ignore pattern): {file_path.relative_to(path)}")
+                        logger.debug(
+                            f"Ignoring file (matched ignore pattern): {file_path.relative_to(path)}"
+                        )
                         continue
 
                     try:
@@ -170,7 +174,9 @@ class DocumentLoader:
                         continue
 
         if ignored_files > 0:
-            logger.info(f"Loaded {total_files - ignored_files} files, ignored {ignored_files} files based on .studioignore")
+            logger.info(
+                f"Loaded {total_files - ignored_files} files, ignored {ignored_files} files based on .studioignore"
+            )
 
     def load_file(self, path: Path, source_type: SourceType) -> list[DocumentChunk]:
         """Load and chunk a single file.

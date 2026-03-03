@@ -253,12 +253,14 @@ class OrchestratedResponseActor:
 
         def _worker() -> None:
             """Run the orchestrator async generator in a dedicated event loop."""
+
             async def _run() -> None:
                 try:
                     # Late import — catches ImportError inside the error guard.
                     from sage.studio.services.agent_orchestrator import (
                         get_orchestrator,  # noqa: PLC0415
                     )
+
                     orchestrator = get_orchestrator()
                     async for item in orchestrator.process_message(
                         message=message, session_id=session_id
@@ -308,7 +310,9 @@ class OrchestratedResponseActor:
             elif hasattr(item, "type") and hasattr(item, "status"):
                 # AgentStep — routing / retrieval / tool-call / response step.
                 stage = str(item.type.value if hasattr(item.type, "value") else item.type)
-                status_str = str(item.status.value if hasattr(item.status, "value") else item.status)
+                status_str = str(
+                    item.status.value if hasattr(item.status, "value") else item.status
+                )
                 state = _agent_step_status_to_state(status_str)
                 yield StageEvent(
                     run_id=run_id,

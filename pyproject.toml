@@ -91,7 +91,6 @@ license = { text = "MIT" }
 full = []
 
 dev = [
-    "isage-studio[full]",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "ruff==0.15.4",

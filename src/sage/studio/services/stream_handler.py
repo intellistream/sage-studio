@@ -340,11 +340,13 @@ async def pipeline_result_to_openai_sse(
             "object": "chat.completion.chunk",
             "created": created,
             "model": model,
-            "choices": [{
-                "index": 0,
-                "delta": {"pipeline_meta": meta},
-                "finish_reason": None,
-            }],
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"pipeline_meta": meta},
+                    "finish_reason": None,
+                }
+            ],
         }
         yield f"data: {json.dumps(meta_chunk)}\n\n"
 
@@ -361,15 +363,18 @@ async def pipeline_result_to_openai_sse(
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {"content": piece},
-                    "finish_reason": None,
-                }],
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": piece},
+                        "finish_reason": None,
+                    }
+                ],
             }
             yield f"data: {json.dumps(chunk)}\n\n"
             # Tiny sleep to simulate token-by-token streaming for the client
             import asyncio
+
             await asyncio.sleep(0)
 
     # --- Finish sentinel ---
@@ -378,11 +383,13 @@ async def pipeline_result_to_openai_sse(
         "object": "chat.completion.chunk",
         "created": created,
         "model": model,
-        "choices": [{
-            "index": 0,
-            "delta": {},
-            "finish_reason": "stop",
-        }],
+        "choices": [
+            {
+                "index": 0,
+                "delta": {},
+                "finish_reason": "stop",
+            }
+        ],
     }
     yield f"data: {json.dumps(finish_chunk)}\n\n"
     yield "data: [DONE]\n\n"

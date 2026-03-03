@@ -190,10 +190,7 @@ def build_llm_router() -> APIRouter:
         raw_models: list[dict[str, Any]] = models_data.get("data", [])
 
         # If only embedding/no chat models are visible, try a one-shot local auto-registration.
-        if not any(
-            (m.get("id") and not _is_embedding_model(m.get("id", "")))
-            for m in raw_models
-        ):
+        if not any((m.get("id") and not _is_embedding_model(m.get("id", ""))) for m in raw_models):
             if await _try_auto_register_local_llm_engines(gateway_url):
                 refreshed = await _probe_gateway(gateway_url)
                 if refreshed is not None:

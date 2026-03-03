@@ -235,8 +235,6 @@ class ChatSSEStreamAdapter:
         return f"event: chat.v2\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-
-
 def _sse_done(*, request_id: str, model: str, now_ts: Callable[[], float] = time.time) -> str:
     payload = {
         "type": "meta",

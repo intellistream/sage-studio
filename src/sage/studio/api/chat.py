@@ -126,7 +126,9 @@ def build_chat_router() -> APIRouter:
         if not req.messages:
             raise HTTPException(status_code=400, detail="messages must not be empty")
         if not req.stream:
-            raise HTTPException(status_code=400, detail="chat completions currently support stream=true only")
+            raise HTTPException(
+                status_code=400, detail="chat completions currently support stream=true only"
+            )
 
         user_text = req.messages[-1].content.strip()
         if not user_text:

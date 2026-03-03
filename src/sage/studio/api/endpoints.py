@@ -128,7 +128,9 @@ def build_endpoint_router() -> APIRouter:
         return _to_response(created)
 
     @router.patch("/endpoints/{endpoint_id}", response_model=ManagedEndpointResponse)
-    async def patch_endpoint(endpoint_id: str, req: EndpointUpdateRequest) -> ManagedEndpointResponse:
+    async def patch_endpoint(
+        endpoint_id: str, req: EndpointUpdateRequest
+    ) -> ManagedEndpointResponse:
         try:
             updated = update_endpoint(
                 endpoint_id,
@@ -138,7 +140,9 @@ def build_endpoint_router() -> APIRouter:
                     model_ids=tuple(req.model_ids) if req.model_ids is not None else None,
                     enabled=req.enabled,
                     is_default=req.is_default,
-                    extra_headers=tuple(req.extra_headers.items()) if req.extra_headers is not None else None,
+                    extra_headers=tuple(req.extra_headers.items())
+                    if req.extra_headers is not None
+                    else None,
                     replace_api_key=("api_key" in req.model_fields_set),
                     api_key=req.api_key,
                 ),
@@ -150,7 +154,9 @@ def build_endpoint_router() -> APIRouter:
         return _to_response(updated)
 
     @router.post("/endpoints/{endpoint_id}/enabled", response_model=ManagedEndpointResponse)
-    async def set_endpoint_status(endpoint_id: str, req: EndpointStatusRequest) -> ManagedEndpointResponse:
+    async def set_endpoint_status(
+        endpoint_id: str, req: EndpointStatusRequest
+    ) -> ManagedEndpointResponse:
         try:
             updated = set_endpoint_enabled(endpoint_id, req.enabled)
         except KeyError as exc:

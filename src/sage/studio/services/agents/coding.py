@@ -40,7 +40,9 @@ class CodingAgent(BaseAgent):
         super().__init__(name="Coder", role="Software Engineer", tools=tools)
         self.bot = CoderBot(tools=list(tools), llm_callable=llm_callable)
 
-    async def run(self, query: str, history: list[dict] | None = None) -> AsyncGenerator[AgentStep, None]:
+    async def run(
+        self, query: str, history: list[dict] | None = None
+    ) -> AsyncGenerator[AgentStep, None]:
         """Delegate to CoderBot and translate events to AgentSteps."""
         yield AgentStep.create(
             type="reasoning",
