@@ -115,6 +115,8 @@ python -c "from sage.studio.studio_manager import StudioManager; print('✓ Stud
 - `src/sage/studio/supervisor/`: 进程、端口、健康检查、启动报告等编排组件
 - `src/sage/studio/frontend/src/services/api/`: 前端按领域拆分的 API 模块
 
+Phase 1 边界与依赖审计文档：`docs/boundary_phase1.md`
+
 ## 📖 Quick Start
 
 ### 🎯 方式一：使用 SAGE CLI（推荐）
