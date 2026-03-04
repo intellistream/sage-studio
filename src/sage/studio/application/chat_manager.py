@@ -858,11 +858,12 @@ class ChatModeManager(StudioManager):
             sys.executable,
             "-m",
             "sagellm_core.embedding_server",
-            "--model",
-            model_name,
             "--port",
             str(port),
         ]
+
+        # The embedding_server reads model from SAGELLM_EMBEDDING_MODEL env var
+        embedding_env = {**os.environ, "SAGELLM_EMBEDDING_MODEL": model_name}
 
         try:
             with open(embedding_log, "w") as log_handle:
@@ -871,6 +872,7 @@ class ChatModeManager(StudioManager):
                     stdin=subprocess.DEVNULL,  # 阻止子进程读取 stdin
                     stdout=log_handle,
                     stderr=subprocess.STDOUT,
+                    env=embedding_env,
                     start_new_session=True,
                 )
                 # Log handle will be closed by context manager,

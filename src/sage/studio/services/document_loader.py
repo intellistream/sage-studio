@@ -20,8 +20,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sage.libs.rag import CharacterSplitter, LoaderFactory
-
 # Reuse DocumentChunk from vector_store to avoid duplication
 from sage.studio.services.vector_store import DocumentChunk
 
@@ -32,6 +30,37 @@ logger = logging.getLogger(__name__)
 
 # Re-export DocumentChunk for convenient imports
 __all__ = ["DocumentChunk", "DocumentLoader", "load_documents"]
+
+# ── Optional heavy dependencies ───────────────────────────────────────────────
+
+try:
+    from sage_rag import LoaderFactory
+except ImportError:
+    LoaderFactory = None  # type: ignore[assignment]
+
+
+class CharacterSplitter:
+    """Simple character-based text splitter."""
+
+    def __init__(self, chunk_size: int = 1000, overlap: int = 200) -> None:
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+
+    def split(self, text: str) -> list[str]:
+        """Split text into overlapping chunks by character count."""
+        if not text:
+            return []
+        if len(text) <= self.chunk_size:
+            return [text]
+        chunks: list[str] = []
+        start = 0
+        while start < len(text):
+            end = min(start + self.chunk_size, len(text))
+            chunks.append(text[start:end])
+            if end >= len(text):
+                break
+            start += self.chunk_size - self.overlap
+        return chunks
 
 
 class DocumentLoader:
@@ -405,8 +434,8 @@ class DocumentLoader:
         """
         try:
             doc = LoaderFactory.load(str(path))
-            content = doc["content"]
-            metadata = doc.get("metadata", {})
+            content = doc.content if hasattr(doc, "content") else doc["content"]
+            metadata = (doc.metadata if hasattr(doc, "metadata") else doc.get("metadata")) or {}
         except ImportError:
             logger.error("PDF loading requires PyPDF2. Install with: pip install PyPDF2")
             return []
@@ -437,8 +466,9 @@ class DocumentLoader:
         """Load and chunk a generic file using LoaderFactory."""
         try:
             doc = LoaderFactory.load(str(path))
-            content = doc["content"]
-            file_type = doc.get("metadata", {}).get("type", source_type.value)
+            content = doc.content if hasattr(doc, "content") else doc["content"]
+            _meta = (doc.metadata if hasattr(doc, "metadata") else doc.get("metadata")) or {}
+            file_type = _meta.get("type", source_type.value)
         except ValueError:
             # Unsupported extension, try as text
             try:
