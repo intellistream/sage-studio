@@ -1661,14 +1661,20 @@ class ChatModeManager(StudioManager):
                 if not is_running:
                     should_auto_scale = True
                 else:
-                    prompt_msg = (
-                        f"[cyan]检测到已有 LLM 服务 ({existing_url}). 仍要继续自动扩容更多模型吗？[/cyan]"
-                        if existing_url
-                        else "[cyan]检测到已有 LLM 服务。仍要继续自动扩容更多模型吗？[/cyan]"
-                    )
+                    # Existing LLM detected — skip auto-scaling by default.
+                    # Only ask when running interactively (no --yes).
                     if skip_confirm:
-                        should_auto_scale = True
+                        # --yes: silently reuse the existing service, no additional scaling
+                        should_auto_scale = False
+                        console.print(
+                            f"[dim]已有 LLM 服务 ({existing_url or 'unknown'})，跳过自动扩容。[/dim]"
+                        )
                     else:
+                        prompt_msg = (
+                            f"[cyan]检测到已有 LLM 服务 ({existing_url}). 仍要继续自动扩容更多模型吗？[/cyan]"
+                            if existing_url
+                            else "[cyan]检测到已有 LLM 服务。仍要继续自动扩容更多模型吗？[/cyan]"
+                        )
                         try:
                             from rich.prompt import Confirm
 
