@@ -44,7 +44,6 @@ dependencies = [
 
     # Agentic dependencies (independent packages)
     "isage-agentic>=0.1.0.3",
-    "isage-sias>=0.1.0",
     "isage-libs-intent>=0.1.0.7", # Intent recognition (L3)
 
     # Memory management (independent package)
@@ -64,31 +63,34 @@ dependencies = [
     "h11>=0.16.0,<1.0.0",
     "websockets>=11.0",
     "python-multipart>=0.0.6",
-    "aiofiles>=23.0.0",
-    "structlog>=23.0.0",
-    "pydantic-settings>=2.0.0",
-    "configparser>=5.3.0",
     "httpx>=0.28.0,<1.0.0",
     "PyYAML>=6.0.1",
 
-    # Auth
-    "passlib[argon2]>=1.7.4,<2.0.0",
-    "python-jose[cryptography]>=3.5.0,<4.0.0",
-
     # Utilities
     "jinja2>=3.1.0,<4.0.0",
-    "markdown>=3.4.4,<4.0.0",
     "markupsafe>=2.0.1",
     "packaging>=24.0,<27.0",  # 兼容 streamlit 等版本
 
     # SAGE middleware integration
     "isage-middleware>=0.2.4.28",
+    "isage-vida>=0.1.0",
 ]
 
 license = { text = "MIT" }
 
 [project.optional-dependencies]
-full = []
+full = [
+    # Continual-learning / coreset selection for tool-use features
+    "isage-sias>=0.1.0",
+    # Backend API / auth / config helpers (optional for lightweight studio installs)
+    "aiofiles>=23.0.0",
+    "configparser>=5.3.0",
+    "markdown>=3.4.4,<4.0.0",
+    "passlib[argon2]>=1.7.4,<2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-jose[cryptography]>=3.5.0,<4.0.0",
+    "structlog>=23.0.0",
+]
 
 dev = [
     "pytest>=7.4.0",
