@@ -69,10 +69,10 @@ dependencies = [
     # Utilities
     "jinja2>=3.1.0,<4.0.0",
     "markupsafe>=2.0.1",
-    "packaging>=24.0,<27.0",  # 兼容 streamlit 等版本
+    "packaging>=24.0,<27.0", # 兼容 streamlit 等版本
 
-    # SAGE middleware integration
-    "isage-middleware>=0.2.4.28",
+    # SAGE kernel integration (includes sage.middleware.* pipeline layer)
+    "isage-kernel>=0.2.5.0",
     "isage-vida>=0.1.0",
 ]
 
