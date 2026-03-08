@@ -9,17 +9,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
-# Agent Step 模型（Multi-Agent 系统）
-from sage.studio.models.agent_step import (
-    AgentStep,
-    StepStatus,
-    StepType,
-    reasoning_step,
-    response_step,
-    tool_call_step,
-    tool_result_step,
-)
-
 
 class PipelineStatus(Enum):
     """Pipeline 状态"""

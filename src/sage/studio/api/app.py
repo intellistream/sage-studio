@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,17 +11,9 @@ from fastapi.staticfiles import StaticFiles
 
 from sage.studio.api.auth import build_auth_router
 from sage.studio.api.canvas import build_canvas_router
-from sage.studio.api.chat import build_chat_router
 from sage.studio.api.endpoints import build_endpoint_router
-from sage.studio.api.llm import build_llm_router
-from sage.studio.api.sessions import build_sessions_router
-from sage.studio.api.vida_admin import build_vida_admin_router
-from sage.studio.api.vida_memory import build_vida_memory_router
-from sage.studio.api.vida_ws import build_vida_ws_router
 from sage.studio.config.ports import StudioPorts
-from sage.studio.config.vida import load_vida_runtime_config
 from sage.studio.runtime.endpoints import bootstrap_dashscope_endpoint_from_env
-from sage.studio.runtime.vida_runtime import get_vida_runtime_manager
 
 
 def _build_cors_origins() -> list[str]:
@@ -37,43 +28,10 @@ def _build_cors_origins() -> list[str]:
 @asynccontextmanager
 async def _app_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     bootstrap_dashscope_endpoint_from_env()
-    vida_runtime = get_vida_runtime_manager()
-    vida_config = load_vida_runtime_config()
-
-    prewarm = os.environ.get("STUDIO_CHAT_PREWARM", "1").strip().lower()
-    if prewarm not in {"0", "false", "off", "no"}:
-        # Run the chat pipeline bootstrap in a background thread so that the
-        # server becomes ready to serve /health immediately, rather than waiting
-        # for the (potentially slow) Flownet pipeline initialization to finish.
-        import asyncio
-        import logging
-
-        _log = logging.getLogger(__name__)
-
-        async def _background_bootstrap() -> None:
-            loop = asyncio.get_running_loop()
-            try:
-                from sage.studio.runtime.chat import bootstrap_chat_service
-
-                await loop.run_in_executor(None, bootstrap_chat_service)
-            except Exception as exc:  # noqa: BLE001
-                _log.warning("Chat service bootstrap failed (non-fatal): %s", exc)
-
-        asyncio.create_task(_background_bootstrap())
-
-    if vida_config.enabled and vida_config.auto_start:
-        try:
-            await vida_runtime.start()
-        except Exception:  # noqa: BLE001
-            import logging
-
-            logging.getLogger(__name__).exception("Vida runtime auto-start failed")
-
     try:
         yield
     finally:
-        if vida_runtime.is_running:
-            await vida_runtime.stop(drain=True)
+        pass
 
 
 def create_app() -> FastAPI:
@@ -88,14 +46,8 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(build_auth_router())
-    app.include_router(build_sessions_router())
-    app.include_router(build_chat_router())
     app.include_router(build_endpoint_router())
     app.include_router(build_canvas_router())
-    app.include_router(build_llm_router())
-    app.include_router(build_vida_admin_router())
-    app.include_router(build_vida_memory_router())
-    app.include_router(build_vida_ws_router())
 
     @app.get("/health")
     async def health() -> dict[str, str]:
