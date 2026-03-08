@@ -79,7 +79,7 @@ We follow Conventional Commits:
 ## Community
 
 - Main SAGE Repository: https://github.com/intellistream/SAGE
-- Documentation: https://intellistream.github.io/SAGE-Pub/
+- Documentation: https://intellistream.github.io/sage-docs/
 - Issues: https://github.com/intellistream/sage-studio/issues
 
 ## License

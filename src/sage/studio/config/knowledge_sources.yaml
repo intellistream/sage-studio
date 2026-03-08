@@ -13,10 +13,10 @@
 # - "**/*.md" 递归匹配所有子目录下的 .md 文件
 
 knowledge_sources:
-  # SAGE 官方文档 (SAGE-Pub仓库)
+  # SAGE 官方文档 (sage-docs 仓库)
   sage_docs:
     type: markdown
-    path: "/home/shuhao/SAGE-Pub/docs_src"
+    path: "/home/shuhao/sage-docs/docs_src"
     description: "SAGE 官方文档，包含架构设计、安装指南、使用教程等"
     enabled: true
     auto_load: true  # 改为启动时自动加载
