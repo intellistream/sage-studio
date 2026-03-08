@@ -19,6 +19,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _load_generation_components():
+    """Load workflow generation dependencies lazily for easier testing."""
+    from sage_libs.sage_agentic.workflow import GenerationContext
+    from sage_libs.sage_agentic.workflow.generators import (
+        LLMWorkflowGenerator,
+        RuleBasedWorkflowGenerator,
+    )
+
+    return GenerationContext, LLMWorkflowGenerator, RuleBasedWorkflowGenerator
+
+
 @dataclass
 class WorkflowGenerationRequest:
     """工作流生成请求"""
@@ -86,14 +97,12 @@ class WorkflowGenerator:
             WorkflowGenerationResult
         """
         try:
-            from sage_libs.sage_agentic.workflow import GenerationContext
-            from sage_libs.sage_agentic.workflow.generators import (
-                LLMWorkflowGenerator,
-                RuleBasedWorkflowGenerator,
+            generation_context_cls, llm_workflow_generator_cls, rule_workflow_generator_cls = (
+                _load_generation_components()
             )
 
             # 创建生成上下文
-            context = GenerationContext(
+            context = generation_context_cls(
                 user_input=user_input,
                 conversation_history=session_messages or [],
                 constraints=constraints or {},
@@ -102,11 +111,11 @@ class WorkflowGenerator:
             # 选择生成器
             if use_llm:
                 if self.llm_generator is None:
-                    self.llm_generator = LLMWorkflowGenerator()
+                    self.llm_generator = llm_workflow_generator_cls()
                 generator = self.llm_generator
             else:
                 if self.rule_based_generator is None:
-                    self.rule_based_generator = RuleBasedWorkflowGenerator()
+                    self.rule_based_generator = rule_workflow_generator_cls()
                 generator = self.rule_based_generator
 
             # 执行生成

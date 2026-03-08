@@ -190,7 +190,7 @@ class PlaygroundExecutor:
                 for port in [
                     StudioPorts.get_recommended_llm_port(),
                     StudioPorts.LLM_DEFAULT,
-                    StudioPorts.BENCHMARK_LLM,
+                    StudioPorts.SAGELLM_SERVE_PORT,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate, timeout=1.0):

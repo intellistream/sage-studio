@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""SAGE Studio CLI - Visual workflow builder and LLM playground.
+"""SAGE Studio CLI - Visual workflow builder.
 
 Studio provides a modern web UI for:
 - Visual pipeline development with drag-and-drop
-- Real-time chat playground with LLM testing
 - Properties panel for configuration
 - Session management and persistence
 """
@@ -21,12 +20,12 @@ studio_manager = None
 
 
 def _get_studio_manager():
-    """Lazy load ChatModeManager (default manager with full LLM support)."""
+    """Lazy load StudioManager to avoid importing heavy runtime dependencies eagerly."""
     global studio_manager
     if studio_manager is None:
-        from sage.studio.chat_manager import ChatModeManager
+        from sage.studio.studio_manager import StudioManager
 
-        studio_manager = ChatModeManager()
+        studio_manager = StudioManager()
     return studio_manager
 
 

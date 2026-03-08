@@ -1,14 +1,14 @@
 """
 Unit test configuration for services.
 
-Inserts MagicMock stubs for sage.middleware, which is an optional L4 dependency
-not installed in the CI/dev unit-test environment. Without these stubs, modules
-modified by issue #43 (researcher.py, node_registry.py) would fail to import at
-test time, breaking tests that were passing before Wave D.
+Inserts MagicMock stubs for ``sage.middleware``, which is an optional higher-layer
+dependency not installed in the lightweight unit-test environment. Without these
+stubs, modules such as ``node_registry.py`` would fail to import during test
+collection.
 
-Only sage.middleware is stubbed here. Other missing L3/L4 packages
-(sage_libs.sage_agentic.intent, sage_libs.sage_finetune) have pre-existing
-collection errors in HEAD and are intentionally left as is.
+Only ``sage.middleware`` is stubbed here. Other missing higher-layer packages
+(``sage_libs.sage_agentic.intent``, ``sage_libs.sage_finetune``) are intentionally
+left untouched.
 """
 
 import sys
@@ -28,8 +28,8 @@ def _stub(path: str) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# sage.middleware subtree  (not installed; needed by researcher.py and
-# node_registry.py after Wave-D #43 removed graceful try/except fallbacks)
+# sage.middleware subtree (not installed; needed by service modules that import
+# runtime operators directly during test collection)
 # ---------------------------------------------------------------------------
 _stub("sage.middleware")
 _stub("sage.middleware.components")

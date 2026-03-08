@@ -105,7 +105,9 @@ class PipelineBuilder:
                 )
             else:
                 # 🆕 增强配置
-                enhanced_config = self._enhance_operator_config(operator_class, node.config)
+                enhanced_config = self._enhance_operator_config(
+                    operator_class, node.config, node_type=node.type
+                )
 
                 # 后续节点 - 添加 transformation
                 stream = stream.map(operator_class, config=enhanced_config, name=node.label)
@@ -256,7 +258,9 @@ class PipelineBuilder:
         except Exception:
             return False
 
-    def _enhance_operator_config(self, operator_class, config: dict) -> dict:
+    def _enhance_operator_config(
+        self, operator_class, config: dict, node_type: str | None = None
+    ) -> dict:
         """
         增强 operator 配置
 
@@ -269,7 +273,14 @@ class PipelineBuilder:
         from pathlib import Path
 
         enhanced = config.copy()
-        operator_name = operator_class.__name__
+        operator_name = getattr(operator_class, "__name__", None)
+        if not operator_name:
+            operator_name = {
+                "generator": "OpenAIGenerator",
+                "openai_generator": "OpenAIGenerator",
+                "retriever": "ChromaRetriever",
+                "chroma_retriever": "ChromaRetriever",
+            }.get(node_type or "", node_type or "")
 
         # OpenAIGenerator: 智能 API key 配置
         if operator_name == "OpenAIGenerator":
@@ -340,11 +351,13 @@ class PipelineBuilder:
 
     def _get_operator_class(self, node_type: str):
         """获取节点类型对应的 Operator 类"""
+        available_types = self.registry.list_types()
+        if node_type not in available_types:
+            raise ValueError(f"Unknown node type: {node_type}. Available types: {available_types}")
+
         operator_class = self.registry.get_operator(node_type)
-        if not operator_class:
-            raise ValueError(
-                f"Unknown node type: {node_type}. Available types: {self.registry.list_types()}"
-            )
+        if operator_class is None:
+            raise ValueError(f"Unknown node type: {node_type}. Available types: {available_types}")
         return operator_class
 
     def _create_source(self, node: VisualNode, pipeline: VisualPipeline):

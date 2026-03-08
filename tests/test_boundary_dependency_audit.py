@@ -1,10 +1,10 @@
-"""Guardrails for sage-studio #41/#42 boundary and dependency refactor.
+"""Guardrails for Studio backend boundaries and dependency direction.
 
 Verifies:
 1. No ``ray`` imports are reintroduced in Python backend source.
-2. API/supervisor Python layers do not import frontend source tree.
-3. CLI keeps lazy manager import strategy (no eager heavy coupling at module import time).
-4. Phase-1 boundary audit document exists and contains required sections.
+2. API and supervisor Python layers do not import frontend source code.
+3. CLI keeps lazy manager import strategy.
+4. The boundary audit document exists and contains required sections.
 """
 
 from __future__ import annotations
@@ -73,11 +73,11 @@ def test_cli_uses_lazy_manager_import():
 
     assert "studio_manager = None" in content
     assert "def _get_studio_manager" in content
-    assert "from sage.studio.chat_manager import ChatModeManager" in content
+    assert "from sage.studio.studio_manager import StudioManager" in content
 
     module_header = content.split("def _get_studio_manager", maxsplit=1)[0]
-    assert "from sage.studio.chat_manager import ChatModeManager" not in module_header, (
-        "ChatModeManager should not be imported at module top-level"
+    assert "from sage.studio.studio_manager import StudioManager" not in module_header, (
+        "StudioManager should not be imported at module top-level"
     )
 
 

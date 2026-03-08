@@ -33,10 +33,6 @@ def __getattr__(name: str):
         from . import services
 
         return services
-    if name == "ChatModeManager":
-        from .chat_manager import ChatModeManager
-
-        return ChatModeManager
     if name == "StudioManager":
         from .studio_manager import StudioManager
 
@@ -47,7 +43,6 @@ def __getattr__(name: str):
 __all__ = [
     "__version__",
     "StudioManager",
-    "ChatModeManager",
     "models",
     "services",
 ]

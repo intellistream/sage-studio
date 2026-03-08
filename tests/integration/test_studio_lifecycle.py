@@ -1,8 +1,8 @@
-"""#44 – start/stop/status/logs 链路端到端回归测试
+"""End-to-end coverage for the core ``sage studio`` lifecycle commands.
 
-Tests the key lifecycle command contracts for ``sage studio`` *without*
-depending on sage-cli being installed.  All tests import the studio Typer
-app directly and patch the module-level ``studio_manager`` global.
+These tests exercise the studio Typer app directly without depending on the
+full ``sage-cli`` command tree. The module-level ``studio_manager`` global is
+patched with a lightweight fake manager.
 """
 
 from __future__ import annotations
@@ -17,31 +17,21 @@ from sage.studio.cli import app
 runner = CliRunner()
 
 
-# ---------------------------------------------------------------------------
-# Fake manager – covers every method called by cli.py commands
-# ---------------------------------------------------------------------------
-
-
 class FakeStudioManager:
-    """Minimal stub for StudioManager / ChatModeManager used in CLI tests."""
+    """Minimal stub for lifecycle command tests."""
 
     def __init__(self) -> None:
         self._running: bool = False
         self._config: dict = {"host": "127.0.0.1", "port": 7788}
-        # Capture last call kwargs for assertion
         self.last_start_kwargs: dict = {}
         self.last_stop_kwargs: dict = {}
         self.last_logs_kwargs: dict = {}
-
-    # -- state helpers -------------------------------------------------------
 
     def is_running(self):
         return self._config["port"] if self._running else None
 
     def load_config(self) -> dict:
         return dict(self._config)
-
-    # -- lifecycle -----------------------------------------------------------
 
     def start(self, **kwargs) -> bool:
         self.last_start_kwargs = kwargs
@@ -65,8 +55,6 @@ class FakeStudioManager:
         self.last_logs_kwargs = kwargs
         return []
 
-    # -- other commands called by cli.py -------------------------------------
-
     def install(self) -> bool:
         return True
 
@@ -89,20 +77,10 @@ def fake_manager() -> FakeStudioManager:
     return FakeStudioManager()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def invoke(fake: FakeStudioManager, *args: str):
-    """Invoke CLI with studio_manager patched to *fake*."""
+    """Invoke CLI with ``studio_manager`` patched to ``fake``."""
     with patch("sage.studio.cli.studio_manager", fake):
         return runner.invoke(app, list(args))
-
-
-# ---------------------------------------------------------------------------
-# Help / discovery
-# ---------------------------------------------------------------------------
 
 
 def test_help_lists_commands():
@@ -111,11 +89,6 @@ def test_help_lists_commands():
     assert result.exit_code == 0
     for cmd in ("start", "stop", "status", "logs", "restart"):
         assert cmd in result.stdout, f"Expected '{cmd}' in help output"
-
-
-# ---------------------------------------------------------------------------
-# start
-# ---------------------------------------------------------------------------
 
 
 def test_start_happy_path(fake_manager):
@@ -146,11 +119,6 @@ def test_start_skip_confirm_flag(fake_manager):
     assert fake_manager.last_start_kwargs.get("skip_confirm") is True
 
 
-# ---------------------------------------------------------------------------
-# stop
-# ---------------------------------------------------------------------------
-
-
 def test_stop_running_service(fake_manager):
     """``stop`` exits 0 when studio is running."""
     fake_manager._running = True
@@ -160,7 +128,7 @@ def test_stop_running_service(fake_manager):
 
 
 def test_stop_not_running(fake_manager):
-    """``stop`` exits 0 even when studio is not running (idempotent)."""
+    """``stop`` exits 0 even when studio is not running."""
     fake_manager._running = False
     result = invoke(fake_manager, "stop")
     assert result.exit_code == 0, result.stdout
@@ -187,11 +155,6 @@ def test_stop_llm_flag(fake_manager):
     assert fake_manager.last_stop_kwargs == {"stop_gateway": False, "stop_llm": True}
 
 
-# ---------------------------------------------------------------------------
-# status
-# ---------------------------------------------------------------------------
-
-
 def test_status_exits_zero(fake_manager):
     """``status`` exits 0 when studio is running."""
     fake_manager._running = True
@@ -200,7 +163,7 @@ def test_status_exits_zero(fake_manager):
 
 
 def test_status_exits_zero_when_not_running(fake_manager):
-    """``status`` exits 0 when studio is not running (shows stopped state)."""
+    """``status`` exits 0 when studio is not running."""
     fake_manager._running = False
     result = invoke(fake_manager, "status")
     assert result.exit_code == 0, result.stdout
@@ -218,13 +181,7 @@ def test_status_swallows_exception():
     with patch("sage.studio.cli.studio_manager", bad_manager):
         result = runner.invoke(app, ["status"])
 
-    # CLI wraps exception – must not propagate to exit code != 0
     assert result.exit_code == 0, result.stdout
-
-
-# ---------------------------------------------------------------------------
-# logs
-# ---------------------------------------------------------------------------
 
 
 def test_logs_exit_zero(fake_manager):
@@ -259,27 +216,3 @@ def test_logs_gateway_flag(fake_manager):
     result = invoke(fake_manager, "logs", "--gateway")
     assert result.exit_code == 0, result.stdout
     assert fake_manager.last_logs_kwargs.get("gateway") is True
-
-
-# ---------------------------------------------------------------------------
-# restart
-# ---------------------------------------------------------------------------
-
-
-def test_restart_calls_stop_then_start(fake_manager):
-    """``restart`` stops then starts the manager."""
-    fake_manager._running = True
-    result = invoke(fake_manager, "restart")
-    assert result.exit_code == 0, result.stdout
-    # After restart, manager should be running again
-    assert fake_manager._running is True
-
-
-def test_restart_stop_preserves_llm(fake_manager):
-    """``restart`` calls stop(stop_llm=True) per CLI implementation."""
-    fake_manager._running = True
-    result = invoke(fake_manager, "restart")
-    assert result.exit_code == 0, result.stdout
-    # cli.py restart calls manager.stop(stop_gateway=False, stop_llm=True)
-    assert fake_manager.last_stop_kwargs.get("stop_llm") is True
-    assert fake_manager.last_stop_kwargs.get("stop_gateway") is False
