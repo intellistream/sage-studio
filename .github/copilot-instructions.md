@@ -2,7 +2,7 @@
 
 ## Scope
 - `isage-studio`: React+TypeScript frontend plus FastAPI backend for visual SAGE pipeline workflows.
-- Layer L6 application; integrates with SAGE core and related packages.
+- Layer: **L4** application; sits above `isage-cli` and integrates with the SAGE core through app/plugin surfaces.
 
 ## Critical rules
 - Keep startup/runtime guidance aligned with Flownet direction; do not add new `ray` dependencies.
@@ -10,6 +10,7 @@
 - Preserve env-driven port model (`STUDIO_FRONTEND_PORT`, `STUDIO_BACKEND_PORT`, `SAGE_GATEWAY_PORT`, etc.).
 - Avoid backward-compatibility shims/fallback imports; fix call sites directly.
 - Keep CLI/plugin behavior stable (`sage studio start|stop|status|logs`).
+- Keep the layering explicit: `isage-studio` is above `isage-cli`, not the same layer, because it extends the CLI through the `sage.cli.plugins` entry-point surface.
 
 ## Workflow
 1. Make targeted frontend/backend changes in existing architecture.
