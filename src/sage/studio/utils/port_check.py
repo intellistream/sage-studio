@@ -1,7 +1,5 @@
 """Port availability check utilities for SAGE Studio"""
 
-from typing import Optional
-
 from rich.console import Console
 
 # Import unified network utilities from sage-common
@@ -29,7 +27,7 @@ def is_port_in_use(port: int, host: str = "0.0.0.0") -> bool:
     return is_port_occupied(host, port)
 
 
-def get_process_using_port(port: int) -> Optional[dict]:
+def get_process_using_port(port: int) -> dict | None:
     """Get information about the process using a specific port.
 
     Args:

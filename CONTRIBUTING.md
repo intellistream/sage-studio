@@ -19,7 +19,7 @@ pip install -e .
 
 3. **Install SAGE core dependencies** (if needed):
 ```bash
-pip install isage-common isage-llm-core isage-llm-gateway
+pip install isage-common isagellm
 ```
 
 ## Architecture
@@ -28,7 +28,16 @@ SAGE Studio is built on top of SAGE's inference framework and follows the SAGE a
 
 - **Frontend**: React + TypeScript + Vite
 - **Backend**: FastAPI (integrated with sage-llm-gateway)
+- **Backend**: FastAPI (Studio backend + Gateway integration)
 - **Integration**: Uses SAGE Control Plane for LLM orchestration
+
+## Docs Consistency Checklist
+
+When a PR changes startup chain, API routes, or runtime behavior, update docs in the same PR:
+
+- [ ] `README.md` startup/port/dependency instructions are still correct
+- [ ] `CONTRIBUTING.md` setup and testing commands match current implementation
+- [ ] New or removed CLI options are documented
 
 ## Code Standards
 
@@ -70,7 +79,7 @@ We follow Conventional Commits:
 ## Community
 
 - Main SAGE Repository: https://github.com/intellistream/SAGE
-- Documentation: https://intellistream.github.io/SAGE-Pub/
+- Documentation: https://intellistream.github.io/sage-docs/
 - Issues: https://github.com/intellistream/sage-studio/issues
 
 ## License

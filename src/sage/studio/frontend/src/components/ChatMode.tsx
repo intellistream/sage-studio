@@ -35,6 +35,7 @@ import {
     PanelLeft,
     Mic,
     ChevronDown,
+    Square,
 } from 'lucide-react'
 import { SageIcon } from './SageIcon'
 import { useChatStore, type ChatMessage, type ReasoningStep } from '../store/chatStore'
@@ -42,6 +43,7 @@ import MessageContent from './MessageContent'
 import FileUpload from './FileUpload'
 import MobileHeader from './MobileHeader'
 import MobileSidebar from './MobileSidebar'
+import VidaStatusCard from './VidaStatusCard'
 import {
     sendChatMessage,
     getChatSessions,
@@ -51,14 +53,15 @@ import {
     clearChatSession as clearSessionApi,
     convertChatSessionToPipeline,
     getLLMStatus,
+    getVidaStatus,
     selectLLMModel,
     type ChatSessionSummary,
     type LLMStatus,
+    type VidaStatus,
 } from '../services/api'
 import { useFlowStore } from '../store/flowStore'
 import type { AppMode } from '../App'
 
-// ============================================================================
 // Sub-Components
 // ============================================================================
 
@@ -134,48 +137,122 @@ function ModelSelector({
     llmStatus: LLMStatus | null
     onSelectModel: (modelName: string, baseUrl: string) => void
 }) {
-    const modelName = llmStatus?.model_name
-        ? (llmStatus.model_name.split('/').pop() || llmStatus.model_name.split('__').pop() || 'Unknown')
-        : 'SAGE'
+    const allModels = llmStatus?.available_models || []
+    const embeddingModels = llmStatus?.embedding_models || []
+    const chatModels = allModels.filter(model => model.engine_type !== 'embedding')
+    const selectableModels = chatModels.length > 0 ? chatModels : allModels
+
+    const currentModelName = llmStatus?.model_name
+    const currentModel = allModels.find(m => m.name === currentModelName)
+
+    const isGatewayService = llmStatus?.service_type === 'gateway'
+    const modelName = isGatewayService
+        ? 'sageLLM'
+        : (currentModel?.name
+            ? (currentModel.name.split('/').pop() || currentModel.name.split('__').pop() || 'Unknown')
+            : 'sageLLM')
 
     const isLocal = llmStatus?.is_local
-    const isHealthy = llmStatus?.healthy
+    const isHealthy = Boolean(llmStatus?.healthy || selectableModels.some(model => model.healthy))
+    const connectionLabel = llmStatus ? (isHealthy ? 'Connected' : 'Disconnected') : 'Connecting'
 
     const handleMenuClick = (e: any) => {
-        const selectedModel = llmStatus?.available_models?.find(m => m.name === e.key)
+        const selectedModel = selectableModels.find(m => m.name === e.key)
         if (selectedModel) {
             onSelectModel(selectedModel.name, selectedModel.base_url)
         }
     }
 
-    const items = llmStatus?.available_models?.map(model => ({
-        key: model.name,
-        label: (
-            <div className="py-1 flex items-center justify-between min-w-[200px]">
-                <div>
-                    <div className="font-medium">{model.name}</div>
-                    <div className="text-xs text-[--gemini-text-secondary]">
-                        {model.description || (model.is_local ? 'Local Model' : 'Cloud Model')}
-                    </div>
-                </div>
-                {/* Status Indicator */}
-                <div className={`w-2 h-2 rounded-full ${model.healthy ? 'bg-green-500' : 'bg-red-400'}`} title={model.healthy ? 'Running' : 'Stopped/Unreachable'} />
-            </div>
-        ),
-    })) || [
-            {
-                key: 'current',
-                label: (
-                    <div className="py-1">
-                        <div className="font-medium">{modelName}</div>
-                        <div className="text-xs text-[--gemini-text-secondary]">
-                            {isLocal ? 'Local Model' : 'Cloud Model'} · {isHealthy ? 'Connected' : 'Disconnected'}
+    const chatModelItems = selectableModels.map(model => {
+        const isSelected = model.name === currentModelName
+
+        return {
+            key: model.name,
+            label: (
+                <div className="py-1 flex items-center justify-between min-w-[280px]">
+                    <div className="flex-1">
+                        <div className={`font-medium flex items-center gap-2 ${
+                            isSelected ? 'text-blue-600 dark:text-blue-400' : ''
+                        }`}>
+                            {model.name}
+                            {isSelected && (
+                                <span className="text-xs px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded">当前</span>
+                            )}
+                        </div>
+                        <div className="text-xs text-[--gemini-text-secondary] space-y-0.5">
+                            <div>{model.description || (model.is_local ? 'Local Model' : 'Cloud Model')}</div>
+                            {(model.engine_type || model.device) && (
+                                <div className="flex items-center gap-2 text-[11px] mt-0.5">
+                                    {model.engine_type && (
+                                        <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
+                                            {model.engine_type}
+                                        </span>
+                                    )}
+                                    {model.device && (
+                                        <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded">
+                                            {model.device}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
-                ),
+                    <div className={`w-2 h-2 rounded-full ml-3 flex-shrink-0 ${model.healthy ? 'bg-green-500' : 'bg-red-400'}`} title={model.healthy ? 'Running' : 'Stopped/Unreachable'} />
+                </div>
+            ),
+        }
+    })
+
+    const embeddingItems = embeddingModels.map(model => ({
+        key: `embed__${model.name}`,
+        disabled: true,
+        label: (
+            <div className="py-1 flex items-center justify-between min-w-[280px] opacity-80">
+                <div className="flex-1">
+                    <div className="font-medium text-[--gemini-text-secondary] flex items-center gap-2">
+                        {model.name}
+                        <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 rounded">embedding</span>
+                    </div>
+                    <div className="text-xs text-[--gemini-text-secondary]">
+                        {model.is_local ? 'Local Embedding Model' : 'Cloud Embedding Model'}
+                    </div>
+                </div>
+                <div className={`w-2 h-2 rounded-full ml-3 flex-shrink-0 ${model.healthy ? 'bg-green-500' : 'bg-red-400'}`} title={model.healthy ? 'Running' : 'Stopped/Unreachable'} />
+            </div>
+        ),
+    }))
+
+    const fallbackItem = [
+        {
+            key: 'current',
+            label: (
+                <div className="py-1">
+                    <div className="font-medium">{modelName}</div>
+                    <div className="text-xs text-[--gemini-text-secondary]">
+                        {(isGatewayService ? 'sageLLM Gateway' : (isLocal ? 'Local Model' : 'Cloud Model'))} · {connectionLabel}
+                    </div>
+                </div>
+            ),
+            disabled: true,
+        },
+    ]
+
+    const items = [
+        ...(chatModelItems.length > 0 ? chatModelItems : fallbackItem),
+        ...(embeddingModels.length > 0 ? [
+            { type: 'divider' as const },
+            {
+                key: '__embed_header__',
                 disabled: true,
+                label: (
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-[--gemini-text-secondary] px-1 py-0.5">
+                        Embedding Models
+                    </div>
+                ),
             },
-        ]
+            ...embeddingItems,
+        ] : []),
+    ]
 
     return (
         <Dropdown
@@ -186,13 +263,34 @@ function ModelSelector({
             trigger={['click']}
         >
             <button className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[--gemini-hover-bg] transition-colors">
-                <span className="text-sm font-medium text-[--gemini-text-primary]">
-                    {modelName}
-                </span>
+                <div className="flex flex-col items-start">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-[--gemini-text-primary]">
+                            {modelName}
+                        </span>
+                        {isHealthy && (
+                            <span className="w-2 h-2 bg-green-500 rounded-full" />
+                        )}
+                    </div>
+                    {currentModel && (currentModel.engine_type || currentModel.device) && (
+                        <div className="flex items-center gap-1.5 text-[10px] mt-0.5">
+                            {currentModel.engine_type && (
+                                <span className="text-blue-600 dark:text-blue-400">
+                                    {currentModel.engine_type}
+                                </span>
+                            )}
+                            {currentModel.engine_type && currentModel.device && (
+                                <span className="text-[--gemini-text-secondary]">·</span>
+                            )}
+                            {currentModel.device && (
+                                <span className="text-[--gemini-text-secondary]">
+                                    {currentModel.device}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <ChevronDown size={16} className="text-[--gemini-text-secondary]" />
-                {isHealthy && (
-                    <span className="w-2 h-2 bg-green-500 rounded-full" />
-                )}
             </button>
         </Dropdown>
     )
@@ -203,17 +301,21 @@ function ChatInput({
     value,
     onChange,
     onSend,
+    onStop,
     onUpload,
     disabled,
     isSending,
+    isStreaming,
     isMobile = false,
 }: {
     value: string
     onChange: (value: string) => void
     onSend: () => void
+    onStop?: () => void
     onUpload: () => void
     disabled: boolean
     isSending: boolean
+    isStreaming?: boolean
     isMobile?: boolean
 }) {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -231,9 +333,16 @@ function ChatInput({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
-            onSend()
+            if (isStreaming && onStop) {
+                onStop()
+            } else if (!isSending && !disabled) {
+                onSend()
+            }
         }
     }
+
+    // Determine if we should show stop button
+    const showStop = isStreaming && !!onStop
 
     return (
         <div className={`w-full mx-auto ${isMobile ? 'px-3 pb-3' : 'max-w-[830px] px-4 pb-6'}`}>
@@ -255,8 +364,8 @@ function ChatInput({
                     onKeyDown={handleKeyDown}
                     onFocus={() => setIsFocused(true)}
                     onBlur={() => setIsFocused(false)}
-                    placeholder="Ask SAGE anything..."
-                    disabled={disabled}
+                    placeholder={isStreaming ? "Generating answer..." : "Ask SAGE anything..."}
+                    disabled={disabled && !showStop}
                     rows={1}
                     className={`
                         w-full bg-transparent resize-none outline-none
@@ -274,7 +383,8 @@ function ChatInput({
                         <Tooltip title="Upload files">
                             <button
                                 onClick={onUpload}
-                                className={`rounded-full hover:bg-[--gemini-hover-bg] transition-colors text-[--gemini-text-secondary] ${isMobile ? 'p-2' : 'p-2.5'}`}
+                                disabled={showStop}
+                                className={`rounded-full hover:bg-[--gemini-hover-bg] transition-colors text-[--gemini-text-secondary] ${isMobile ? 'p-2' : 'p-2.5'} ${showStop ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
                                 <Plus size={isMobile ? 18 : 20} />
                             </button>
@@ -291,20 +401,22 @@ function ChatInput({
                         )}
                     </div>
 
-                    {/* Right: Send button */}
+                    {/* Right: Send/Stop button */}
                     <button
-                        onClick={onSend}
-                        disabled={!value.trim() || disabled}
+                        onClick={showStop ? onStop : onSend}
+                        disabled={(!value.trim() && !showStop) || (disabled && !showStop)}
                         className={`
                             rounded-full transition-all duration-200
                             ${isMobile ? 'p-2' : 'p-2.5'}
-                            ${value.trim() && !disabled
+                            ${(value.trim() || showStop) && !(disabled && !showStop)
                                 ? 'bg-[--gemini-text-primary] text-[--gemini-main-bg] hover:opacity-80 active:scale-95'
                                 : 'bg-[--gemini-border] text-[--gemini-text-secondary]/40 cursor-not-allowed'
                             }
                         `}
                     >
-                        {isSending ? (
+                        {showStop ? (
+                            <Square size={isMobile ? 16 : 18} fill="currentColor" />
+                        ) : isSending ? (
                             <Loader size={isMobile ? 18 : 20} className="animate-spin" />
                         ) : (
                             <Send size={isMobile ? 18 : 20} />
@@ -334,6 +446,7 @@ function MessageBubble({
     streamingMessageId: string | null
 }) {
     const isUser = message.role === 'user'
+    const tokensPerSecond = extractTokensPerSecond(message.metadata)
 
     if (isUser) {
         // User message: Right-aligned, light grey bubble
@@ -373,10 +486,52 @@ function MessageBubble({
                         reasoningSteps={message.reasoningSteps}
                         isReasoning={message.isReasoning}
                     />
+                    {tokensPerSecond !== null && (
+                        <div className="mt-2 text-xs text-[--gemini-text-secondary]">
+                            Speed {tokensPerSecond.toFixed(2)} token/s
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     )
+}
+
+function extractTokensPerSecond(metadata?: Record<string, unknown>): number | null {
+    const metricsValue = metadata?.metrics
+    if (!metricsValue || typeof metricsValue !== 'object') {
+        return null
+    }
+
+    return findTokensPerSecond(metricsValue as Record<string, unknown>)
+}
+
+function findTokensPerSecond(metrics: Record<string, unknown>): number | null {
+    const candidateKeys = ['tokens_per_second', 'token_per_second', 'throughput_tps', 'tps']
+
+    for (const key of candidateKeys) {
+        const value = metrics[key]
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value
+        }
+        if (typeof value === 'string') {
+            const parsed = Number.parseFloat(value)
+            if (Number.isFinite(parsed)) {
+                return parsed
+            }
+        }
+    }
+
+    for (const nested of Object.values(metrics)) {
+        if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+            const found = findTokensPerSecond(nested as Record<string, unknown>)
+            if (found !== null) {
+                return found
+            }
+        }
+    }
+
+    return null
 }
 
 /** Empty state when no messages */
@@ -420,6 +575,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
         removeSession,
         addMessage,
         appendToMessage,
+        updateMessageMetadata,
         setCurrentInput,
         setIsStreaming,
         setStreamingMessageId,
@@ -435,11 +591,13 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     const { setNodes, setEdges } = useFlowStore()
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
+    const abortControllerRef = useRef<AbortController | null>(null)
     const [isSending, setIsSending] = useState(false)
     const [isConverting, setIsConverting] = useState(false)
     const [recommendationSummary, setRecommendationSummary] = useState<string | null>(null)
     const [recommendationInsights, setRecommendationInsights] = useState<string[]>([])
     const [llmStatus, setLlmStatus] = useState<LLMStatus | null>(null)
+    const [vidaStatus, setVidaStatus] = useState<VidaStatus | null>(null)
     const [isUploadVisible, setIsUploadVisible] = useState(false)
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -452,8 +610,13 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     useEffect(() => {
         loadSessions()
         loadLLMStatus()
+        loadVidaStatus()
         const interval = setInterval(loadLLMStatus, 10000)
-        return () => clearInterval(interval)
+        const vidaInterval = setInterval(loadVidaStatus, 5000)
+        return () => {
+            clearInterval(interval)
+            clearInterval(vidaInterval)
+        }
     }, [])
 
     const loadLLMStatus = async () => {
@@ -465,15 +628,68 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
         }
     }
 
+    const loadVidaStatus = async () => {
+        try {
+            const status = await getVidaStatus()
+            setVidaStatus(status)
+        } catch (error) {
+            console.error('Failed to load VIDA status:', error)
+            setVidaStatus(null)
+        }
+    }
+
     const handleModelSelect = async (modelName: string, baseUrl: string) => {
         try {
-            await selectLLMModel(modelName, baseUrl)
-            antMessage.success(`Switched to model: ${modelName}`)
-            // Refresh status immediately
-            await loadLLMStatus()
+            // Show loading message
+            const hideLoading = antMessage.loading(`切换到模型: ${modelName}...`, 0)
+
+            try {
+                await selectLLMModel(modelName, baseUrl)
+
+                // Wait for backend config to update (retry up to 5 times with 1s interval)
+                let retries = 5
+                let modelNameMatched = false
+
+                while (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 1000))
+                    const status = await getLLMStatus()
+
+                    // Success: model_name matches (don't require healthy yet)
+                    if (status.model_name === modelName) {
+                        modelNameMatched = true
+                        setLlmStatus(status)
+                        hideLoading()
+
+                        const currentModel = status.available_models?.find(m => m.name === modelName)
+                        if (currentModel?.healthy) {
+                            antMessage.success(`已切换到: ${modelName}`)
+                        } else {
+                            antMessage.success(`已切换到: ${modelName}（模型启动中...）`)
+                        }
+                        break
+                    }
+
+                    retries--
+                }
+
+                // Even if model_name doesn't match yet, force update UI to show the selection
+                if (!modelNameMatched) {
+                    const finalStatus = await getLLMStatus()
+                    // Force update the status to show the selected model
+                    finalStatus.model_name = modelName
+                    finalStatus.base_url = baseUrl
+                    setLlmStatus(finalStatus)
+
+                    hideLoading()
+                    antMessage.warning(`模型已配置: ${modelName}（后台加载中...）`)
+                }
+            } catch (error) {
+                hideLoading()
+                throw error
+            }
         } catch (error) {
             console.error('Failed to switch model:', error)
-            antMessage.error('Failed to switch model')
+            antMessage.error('切换模型失败')
         }
     }
 
@@ -500,6 +716,10 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     }
 
     const loadSessionMessages = async (sessionId: string) => {
+        if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
+            console.warn('[ChatMode] loadSessionMessages called with invalid sessionId:', sessionId)
+            return
+        }
         try {
             const detail = await getChatSessionDetail(sessionId)
 
@@ -536,9 +756,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
     }
 
     const handleSendMessage = async () => {
-        if (!currentInput.trim() || isStreaming || isSending) {
-            return
-        }
+        if (!currentInput.trim() || isStreaming || isSending) return
 
         const userMessageContent = currentInput.trim()
         setCurrentInput('')
@@ -583,7 +801,20 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
             setIsStreaming(true)
             setStreamingMessageId(assistantMessageId)
 
-            await sendChatMessage(
+            // Model resolution: use the polled llmStatus model_name.
+            // The backend can also auto-detect from gateway, so model is best-effort here.
+            let selectedModel = llmStatus?.model_name || ''
+
+            // If we don't have a model yet (initial load race), do one fresh fetch
+            if (!selectedModel) {
+                const freshStatus = await getLLMStatus().catch(() => null)
+                if (freshStatus) {
+                    setLlmStatus(freshStatus)
+                    selectedModel = freshStatus.model_name || ''
+                }
+            }
+
+            const controller = await sendChatMessage(
                 userMessageContent,
                 sessionId,
                 (chunk: string) => {
@@ -600,6 +831,13 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                     setIsStreaming(false)
                     setStreamingMessageId(null)
                     setMessageReasoning(sessionId, assistantMessageId, false)
+
+                    // If response completed but message content is still empty, show fallback
+                    const currentMessages = useChatStore.getState().messages[sessionId!] || []
+                    const assistantMsg = currentMessages.find((m: ChatMessage) => m.id === assistantMessageId)
+                    if (assistantMsg && !assistantMsg.content.trim()) {
+                        appendToMessage(sessionId!, assistantMessageId, '(No response from model. Please try again.)')
+                    }
 
                     updateSessionStats(sessionId!, {
                         message_count: (messages[sessionId!] || []).length,
@@ -619,14 +857,29 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                     onReasoningEnd: () => {
                         setMessageReasoning(sessionId, assistantMessageId, false)
                     },
+                    onMetrics: (metrics) => {
+                        updateMessageMetadata(sessionId, assistantMessageId, { metrics })
+                    },
                 },
-                llmStatus?.model_name // Pass the selected model
+                selectedModel // Pass the selected model with fallback
             )
+            abortControllerRef.current = controller
         } catch (error) {
             console.error('Send message error:', error)
             antMessage.error('Failed to send message')
         } finally {
             setIsSending(false)
+            abortControllerRef.current = null
+        }
+    }
+
+    const handleStopGeneration = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+            abortControllerRef.current = null
+            setIsStreaming(false)
+            setStreamingMessageId(null)
+            antMessage.info('Generation stopped')
         }
     }
 
@@ -733,6 +986,7 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                         sessions={sessions}
                         currentSessionId={currentSessionId}
                         isLoading={isLoading}
+                        vidaStatus={vidaStatus}
                         onSessionClick={(sessionId) => {
                             setCurrentSessionId(sessionId)
                             loadSessionMessages(sessionId)
@@ -772,6 +1026,8 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
 
                     {/* Session List */}
                     <div className="flex-1 overflow-y-auto gemini-scrollbar py-2">
+                        <VidaStatusCard status={vidaStatus} className="mx-3 mb-2" />
+
                         {isLoading ? (
                             <div className="flex justify-center items-center h-32">
                                 <Spin />
@@ -918,9 +1174,11 @@ export default function ChatMode({ onModeChange, isMobile = false }: ChatModePro
                         value={currentInput}
                         onChange={setCurrentInput}
                         onSend={handleSendMessage}
+                        onStop={handleStopGeneration}
                         onUpload={() => setIsUploadVisible(true)}
-                        disabled={isStreaming || isSending}
-                        isSending={isSending || isStreaming}
+                        disabled={isSending}
+                        isSending={isSending}
+                        isStreaming={isStreaming}
                         isMobile={isMobile}
                     />
                 </div>

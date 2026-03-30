@@ -1,16 +1,17 @@
+import os
 import sqlite3
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, field_validator
-
 from sage.common.config.user_paths import get_user_data_dir
 
 # Configuration
-# TODO: Move SECRET_KEY to config/env
-SECRET_KEY = "sage-studio-secret-key-change-me-in-production"  # pragma: allowlist secret
+SECRET_KEY = os.environ.get(
+    "SAGE_STUDIO_SECRET_KEY",
+    "sage-studio-secret-key-change-me-in-production",  # pragma: allowlist secret
+)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
@@ -34,7 +35,7 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    username: Optional[str] = None
+    username: str | None = None
 
 
 class UserCreate(BaseModel):
@@ -81,7 +82,7 @@ class AuthService:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO users (username, hashed_password, created_at, is_guest) VALUES (?, ?, ?, 0)",
-                    (username, hashed_password, datetime.utcnow()),
+                    (username, hashed_password, datetime.now(timezone.utc)),
                 )
                 user_id = cursor.lastrowid
                 conn.commit()
@@ -106,7 +107,7 @@ class AuthService:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO users (username, hashed_password, created_at, is_guest) VALUES (?, ?, ?, 1)",
-                (username, hashed_password, datetime.utcnow()),
+                (username, hashed_password, datetime.now(timezone.utc)),
             )
             user_id = cursor.lastrowid
             conn.commit()
@@ -123,7 +124,7 @@ class AuthService:
             cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
 
-    def get_user(self, username: str) -> Optional[UserInDB]:
+    def get_user(self, username: str) -> UserInDB | None:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -141,17 +142,17 @@ class AuthService:
                 )
             return None
 
-    def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    def create_access_token(self, data: dict, expires_delta: timedelta | None = None) -> str:
         to_encode = data.copy()
         if expires_delta:
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
         else:
-            expire = datetime.utcnow() + timedelta(minutes=15)
+            expire = datetime.now(timezone.utc) + timedelta(minutes=15)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt
 
-    def verify_token(self, token: str) -> Optional[str]:
+    def verify_token(self, token: str) -> str | None:
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             username: str = payload.get("sub")

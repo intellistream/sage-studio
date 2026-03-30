@@ -1,8 +1,5 @@
 [build-system]
-requires = [
-    "setuptools>=64",
-    "wheel",
-]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,9 +8,7 @@ dynamic = ["version"]
 description = "SAGE Studio - Visual workflow builder and LLM playground for SAGE AI pipelines"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [
-    { name = "IntelliStream Team", email = "shuhao_zhang@hust.edu.cn" },
-]
+authors = [{ name = "IntelliStream Team", email = "shuhao_zhang@hust.edu.cn" }]
 keywords = [
     "sage",
     "studio",
@@ -38,53 +33,70 @@ classifiers = [
 
 # Core dependencies
 dependencies = [
-    # SAGE core packages (published to PyPI)
-    "isage-common>=0.2.0",
-    "isage-llm-core>=0.2.0",
-    "isage-llm-gateway>=0.2.0",
-    
+    # SAGE meta package (includes all core packages, and isage-cli transitively)
+    "isage>=0.2.4.21",
+
+    # Flownet runtime (distributed dataflow execution, replaces Ray)
+    "isage-flownet>=0.1.1",
+
+    # sageLLM - IntelliStream自研推理引擎（包含Gateway、Control Plane、Backend等完整推理能力）
+    "isagellm>=0.5.4.3",
+
+    # Agentic dependencies (independent packages)
+    "isage-agentic>=0.1.0.3",
+    "isage-libs-intent>=0.1.0.7", # Intent recognition (L3)
+
+    # Memory management (independent package)
+    "isage-neuromem>=0.2.1.4", # Memory collection & vector storage (L4)
+
+    # Data management (independent package)
+    "isage-data>=0.2.3.2", # Dataset management (used by finetune data endpoints)
+
+    # Fine-tune dependencies (independent package)
+    "isage-finetune>=0.1.0.5",
+
     # Backend API dependencies
     "pydantic[email]>=2.10.0,<3.0.0",
     "fastapi>=0.115.0,<1.0.0",
-    "starlette>=0.40,<0.51",
+    "starlette>=0.40,<0.53",
     "uvicorn[standard]>=0.34.0,<1.0.0",
     "h11>=0.16.0,<1.0.0",
     "websockets>=11.0",
     "python-multipart>=0.0.6",
-    "aiofiles>=23.0.0",
-    "structlog>=23.0.0",
-    "pydantic-settings>=2.0.0",
-    "configparser>=5.3.0",
     "httpx>=0.28.0,<1.0.0",
-
-    # Auth
-    "passlib[argon2]>=1.7.4,<2.0.0",
-    "python-jose[cryptography]>=3.5.0,<4.0.0",
+    "PyYAML>=6.0.1",
 
     # Utilities
     "jinja2>=3.1.0,<4.0.0",
-    "markdown>=3.4.4,<4.0.0",
     "markupsafe>=2.0.1",
-    "packaging>=20.5",
+    "packaging>=24.0,<27.0", # 兼容 streamlit 等版本
+
+    # SAGE kernel integration (includes sage.middleware.* pipeline layer)
+    "isage-kernel>=0.2.5.0",
+    "isage-vida>=0.1.0",
 ]
 
-license = {text = "MIT"}
+license = { text = "MIT" }
 
 [project.optional-dependencies]
+full = [
+    # Continual-learning / coreset selection for tool-use features
+    "isage-sias>=0.1.0",
+    # Backend API / auth / config helpers (optional for lightweight studio installs)
+    "aiofiles>=23.0.0",
+    "configparser>=5.3.0",
+    "markdown>=3.4.4,<4.0.0",
+    "passlib[argon2]>=1.7.4,<2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-jose[cryptography]>=3.5.0,<4.0.0",
+    "structlog>=23.0.0",
+]
+
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
-    "ruff==0.14.6",
-    "mypy>=1.7.0",
-]
-
-# Full middleware integration (optional)
-middleware = [
-    "isage-middleware>=0.2.0",
-]
-
-all = [
-    "isage-studio[middleware]",
+    "ruff==0.15.4",
+    "isage-pypi-publisher>=0.2.1.0",
 ]
 
 [project.urls]
@@ -95,8 +107,12 @@ Repository = "https://github.com/intellistream/sage-studio.git"
 "Parent Project" = "https://github.com/intellistream/SAGE"
 
 [project.scripts]
-# Studio CLI commands will be integrated into sage CLI via sage-tools
-# No standalone scripts needed here
+# Studio CLI is registered as a sage CLI plugin via entry point
+# sage-cli will dynamically discover and load studio commands
+
+[project.entry-points."sage.cli.plugins"]
+# Register studio CLI to sage command
+studio = "sage.studio.cli:register_studio_command"
 
 [tool.setuptools.packages.find]
 namespaces = true
@@ -110,15 +126,19 @@ where = ["src"]
     "py.typed",
     "*.pyi",
     "templates/*.html",
+    "templates/**/*.html",
     "static/*",
-    "config/**/*",
+    "static/**/*",
+    "config/**/*.yaml",
+    "config/**/*.json",
+    "config/**/*.toml",
     "data/**/*",
-    "docs/**/*",
-    "frontend/**/*",
+    "docs/**/*.md",
+    "frontend/dist/**/*",
 ]
 
 [tool.setuptools.dynamic]
-version = {attr = "sage.studio._version.__version__"}
+version = { attr = "sage.studio._version.__version__" }
 
 # Development tools configuration
 [tool.black]
@@ -130,33 +150,12 @@ include = '\.pyi?$'
 profile = "black"
 line_length = 100
 
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-
 [tool.pytest.ini_options]
-testpaths = [
-    "tests",
-    "src",
-]
-python_files = [
-    "test_*.py",
-    "*_test.py",
-]
-python_classes = [
-    "Test*",
-]
-python_functions = [
-    "test_*",
-]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--verbose",
-    "-ra",
-]
+testpaths = ["tests", "src"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["--strict-markers", "--strict-config", "--verbose", "-ra"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -169,14 +168,8 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = [
-    "src/sage",
-]
-omit = [
-    "*/tests/*",
-    "*/test_*.py",
-    "*/_test_*.py",
-]
+source = ["src/sage"]
+omit = ["*/tests/*", "*/test_*.py", "*/_test_*.py"]
 
 [tool.coverage.report]
 exclude_lines = [

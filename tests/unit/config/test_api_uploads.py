@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from sage.studio.config.backend.api import app
+from sage.studio.api.app import app
 from sage.studio.services.file_upload_service import FileMetadata
 
 client = TestClient(app)
@@ -11,7 +11,7 @@ client = TestClient(app)
 
 @pytest.fixture
 def mock_upload_service():
-    with patch("sage.studio.config.backend.api.get_file_upload_service") as mock_get:
+    with patch("sage.studio.api.canvas.get_file_upload_service") as mock_get:
         service = MagicMock()
         mock_get.return_value = service
         yield service

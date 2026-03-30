@@ -1,0 +1,47 @@
+# Include Python source and config files
+include README.md
+include LICENSE
+include CHANGELOG.md
+include pyproject.toml
+
+# Include backend config
+recursive-include src/sage/studio/config *.yaml *.json *.toml
+
+# Include frontend dist (built files only)
+recursive-include src/sage/studio/frontend/dist *
+
+# Include templates and static files
+recursive-include src/sage/studio/templates *.html *.css *.js
+recursive-include src/sage/studio/static *
+
+# Exclude development and build artifacts
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude .gitignore
+
+# Exclude frontend source and development files
+prune src/sage/studio/frontend/src
+prune src/sage/studio/frontend/node_modules
+exclude src/sage/studio/frontend/package.json
+exclude src/sage/studio/frontend/package-lock.json
+exclude src/sage/studio/frontend/tsconfig.json
+exclude src/sage/studio/frontend/tsconfig.node.json
+exclude src/sage/studio/frontend/vite.config.ts
+exclude src/sage/studio/frontend/tailwind.config.cjs
+exclude src/sage/studio/frontend/postcss.config.cjs
+exclude src/sage/studio/frontend/index.html
+exclude src/sage/studio/frontend/*.svg
+exclude src/sage/studio/frontend/.gitignore
+
+# Exclude test files
+prune tests
+exclude pytest.ini
+exclude .pytest_cache
+
+# Exclude CI/CD and development tools
+exclude .github
+exclude .vscode
+prune .github
+prune .vscode

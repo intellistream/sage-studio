@@ -20,15 +20,29 @@ Architecture:
 
 __layer__ = "L6"
 
-from . import models, services
 from ._version import __version__
-from .chat_manager import ChatModeManager
-from .studio_manager import StudioManager
+
+
+def __getattr__(name: str):
+    """懒加载重型模块，避免 import 时触发 torch 等大型依赖。"""
+    if name == "models":
+        from . import models
+
+        return models
+    if name == "services":
+        from . import services
+
+        return services
+    if name == "StudioManager":
+        from .studio_manager import StudioManager
+
+        return StudioManager
+    raise AttributeError(f"module 'sage.studio' has no attribute {name!r}")
+
 
 __all__ = [
     "__version__",
     "StudioManager",
-    "ChatModeManager",
     "models",
     "services",
 ]

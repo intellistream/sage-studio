@@ -14,7 +14,10 @@ Pipeline Builder - 将 Studio 可视化模型转换为 SAGE Pipeline
 - 状态管理（由 SAGE Engine 完成）
 """
 
+import logging
 from collections import defaultdict, deque
+
+from sage.common.config.user_paths import get_user_paths
 
 # 从 SAGE 公共 API 导入（参考 PACKAGE_ARCHITECTURE.md）
 from sage.kernel.api import LocalEnvironment
@@ -38,6 +41,8 @@ from sage.libs.foundation.io.source import (
 
 from ..models import VisualNode, VisualPipeline
 from .node_registry import get_node_registry
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineBuilder:
@@ -100,7 +105,9 @@ class PipelineBuilder:
                 )
             else:
                 # 🆕 增强配置
-                enhanced_config = self._enhance_operator_config(operator_class, node.config)
+                enhanced_config = self._enhance_operator_config(
+                    operator_class, node.config, node_type=node.type
+                )
 
                 # 后续节点 - 添加 transformation
                 stream = stream.map(operator_class, config=enhanced_config, name=node.label)
@@ -112,6 +119,22 @@ class PipelineBuilder:
             stream.sink(self._create_sink(pipeline))
 
         return env
+
+    def build_with_diagnostics(
+        self, pipeline: VisualPipeline, user_input: str = None
+    ) -> tuple[BaseEnvironment | None, dict]:
+        """Build pipeline and return structured diagnostics on failure."""
+        try:
+            env = self.build(pipeline, user_input=user_input)
+            return env, {"ok": True, "diagnostics": []}
+        except Exception as exc:
+            diagnostics = {
+                "ok": False,
+                "error": str(exc),
+                "registry": self.registry.diagnose_dependencies(),
+            }
+            logger.error("Pipeline build failed", extra=diagnostics)
+            return None, diagnostics
 
     def _validate_pipeline(self, pipeline: VisualPipeline):
         """验证 Pipeline 结构的有效性"""
@@ -188,7 +211,7 @@ class PipelineBuilder:
 
     def _load_environment_variables(self) -> None:
         """
-        从 ~/.sage/.env.json 加载环境变量
+        从用户配置目录加载环境变量
 
         支持的变量:
         - OPENAI_API_KEY: OpenAI API
@@ -196,9 +219,8 @@ class PipelineBuilder:
         """
         import json
         import os
-        from pathlib import Path
 
-        env_file = Path.home() / ".sage" / ".env.json"
+        env_file = get_user_paths().config_dir / "studio.env.json"
         if env_file.exists():
             try:
                 with open(env_file) as f:
@@ -206,11 +228,13 @@ class PipelineBuilder:
                     self._env_config = env_vars  # 缓存配置
                     for key, value in env_vars.items():
                         os.environ[key] = value
-                print(f"✅ 已加载环境变量: {', '.join(env_vars.keys())}")
+                logger.info(
+                    "Loaded Studio environment config", extra={"keys": list(env_vars.keys())}
+                )
             except Exception as e:
-                print(f"⚠️ 加载环境变量失败: {e}")
+                logger.error("Failed to load Studio environment config", extra={"error": str(e)})
         else:
-            print(f"ℹ️ 环境变量文件不存在: {env_file}")
+            logger.info("Studio environment config file not found", extra={"path": str(env_file)})
 
     def _load_env_from_config(self) -> dict:
         """从缓存的配置中读取环境变量"""
@@ -234,7 +258,9 @@ class PipelineBuilder:
         except Exception:
             return False
 
-    def _enhance_operator_config(self, operator_class, config: dict) -> dict:
+    def _enhance_operator_config(
+        self, operator_class, config: dict, node_type: str | None = None
+    ) -> dict:
         """
         增强 operator 配置
 
@@ -247,7 +273,14 @@ class PipelineBuilder:
         from pathlib import Path
 
         enhanced = config.copy()
-        operator_name = operator_class.__name__
+        operator_name = getattr(operator_class, "__name__", None)
+        if not operator_name:
+            operator_name = {
+                "generator": "OpenAIGenerator",
+                "openai_generator": "OpenAIGenerator",
+                "retriever": "ChromaRetriever",
+                "chroma_retriever": "ChromaRetriever",
+            }.get(node_type or "", node_type or "")
 
         # OpenAIGenerator: 智能 API key 配置
         if operator_name == "OpenAIGenerator":
@@ -270,14 +303,14 @@ class PipelineBuilder:
 
             # 确保 base_url 字段存在（如果还没有），本地优先
             if "base_url" not in enhanced:
-                from sage.common.config.ports import SagePorts
+                from sage.studio.config.ports import StudioPorts
 
                 # 优先探测本地 LLM 端点（8001 → 8901）
                 detected = None
                 for port in [
-                    SagePorts.get_recommended_llm_port(),
-                    SagePorts.LLM_DEFAULT,
-                    SagePorts.BENCHMARK_LLM,
+                    StudioPorts.get_recommended_llm_port(),
+                    StudioPorts.LLM_DEFAULT,
+                    StudioPorts.SAGELLM_SERVE_PORT,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate):
@@ -286,13 +319,13 @@ class PipelineBuilder:
 
                 if detected:
                     enhanced["base_url"] = detected
-                    print(f"  ✓ 发现本地 LLM 端点: {detected}")
+                    logger.info("Detected local LLM endpoint", extra={"base_url": detected})
                 else:
                     # 回落到显式配置的 OPENAI_BASE_URL（若存在），否则留空由上游处理
                     env_base = os.environ.get("OPENAI_BASE_URL")
                     if env_base:
                         enhanced["base_url"] = env_base
-                        print(f"  ✓ 使用显式 OPENAI_BASE_URL: {env_base}")
+                        logger.info("Using explicit OPENAI_BASE_URL", extra={"base_url": env_base})
 
         # ChromaRetriever: 默认 ChromaDB 配置
         elif operator_name == "ChromaRetriever":
@@ -306,17 +339,25 @@ class PipelineBuilder:
             if "top_k" not in enhanced:
                 enhanced["top_k"] = 5
 
-            print(f"  ✓ ChromaRetriever: {enhanced['collection_name']} (top_k={enhanced['top_k']})")
+            logger.info(
+                "Configured ChromaRetriever defaults",
+                extra={
+                    "collection_name": enhanced["collection_name"],
+                    "top_k": enhanced["top_k"],
+                },
+            )
 
         return enhanced
 
     def _get_operator_class(self, node_type: str):
         """获取节点类型对应的 Operator 类"""
+        available_types = self.registry.list_types()
+        if node_type not in available_types:
+            raise ValueError(f"Unknown node type: {node_type}. Available types: {available_types}")
+
         operator_class = self.registry.get_operator(node_type)
-        if not operator_class:
-            raise ValueError(
-                f"Unknown node type: {node_type}. Available types: {self.registry.list_types()}"
-            )
+        if operator_class is None:
+            raise ValueError(f"Unknown node type: {node_type}. Available types: {available_types}")
         return operator_class
 
     def _create_source(self, node: VisualNode, pipeline: VisualPipeline):

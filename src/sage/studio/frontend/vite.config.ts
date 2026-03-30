@@ -16,10 +16,10 @@ export default defineConfig({
         // 'true' means allow any host - necessary for reverse proxy setups
         allowedHosts: true,
         proxy: {
-            // 所有 Studio API 统一转发到 Gateway
-                // 优先使用环境变量 VITE_GATEWAY_PORT，否则默认为 8889
-                '/api': {
-                    target: `http://localhost:${process.env.VITE_GATEWAY_PORT || 8889}`,
+            // Studio Backend API - 独立后端提供完整的 SAGE 框架能力
+            // 支持环境变量配置端口，避免 8080 冲突
+            '/api': {
+                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8765'}`,
                 changeOrigin: true,
                 rewrite: (path) => path,
             },
@@ -35,9 +35,9 @@ export default defineConfig({
         // Allow all external hosts (Cloudflare Tunnel, custom domains, etc.)
         allowedHosts: true,
         proxy: {
-            // 所有 Studio API 统一转发到 Gateway
-                '/api': {
-                    target: `http://localhost:${process.env.VITE_GATEWAY_PORT || 8889}`,
+            // Studio Backend API
+            '/api': {
+                target: `http://localhost:${process.env.VITE_BACKEND_PORT || process.env.STUDIO_BACKEND_PORT || '8765'}`,
                 changeOrigin: true,
                 rewrite: (path) => path,
             },

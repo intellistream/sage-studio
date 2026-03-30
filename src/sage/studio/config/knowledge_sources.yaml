@@ -13,13 +13,13 @@
 # - "**/*.md" 递归匹配所有子目录下的 .md 文件
 
 knowledge_sources:
-  # SAGE 官方文档
+  # SAGE 官方文档 (sage-docs 仓库)
   sage_docs:
     type: markdown
-    path: "docs-public/docs_src"
+    path: "/home/shuhao/sage-docs/docs_src"
     description: "SAGE 官方文档，包含架构设计、安装指南、使用教程等"
     enabled: true
-    auto_load: false
+    auto_load: true  # 改为启动时自动加载
     file_patterns:
     - "*.md"
     - "**/*.md"
@@ -30,7 +30,7 @@ knowledge_sources:
   # SAGE 示例代码
   examples:
     type: python_code
-    path: "examples/"
+    path: "/home/shuhao/SAGE/examples/"
     description: "SAGE 示例代码，包含各层级的使用示例"
     enabled: true
     auto_load: false
@@ -44,7 +44,7 @@ knowledge_sources:
   # SAGE API 文档 (从 docstring 提取)
   api_reference:
     type: python_code
-    path: "packages/"
+    path: "/home/shuhao/SAGE/packages/"
     description: "SAGE API 文档，从源代码 docstring 中提取"
     enabled: true
     auto_load: false
@@ -133,11 +133,11 @@ embedding:
   # Embedding 模型
   # 推荐中文模型: BAAI/bge-small-zh-v1.5, BAAI/bge-m3
   # 推荐多语言模型: sentence-transformers/all-MiniLM-L6-v2
-  model: "BAAI/bge-m3"
+  model: "BAAI/bge-small-zh-v1.5"
 
   # 向量维度 (根据模型设置)
   # bge-small-zh-v1.5: 512, bge-m3: 1024, all-MiniLM-L6-v2: 384
-  dim: 1024
+  dim: 512
 
   # 批处理大小
   batch_size: 32

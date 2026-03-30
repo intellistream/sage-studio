@@ -71,6 +71,14 @@ export default function MessageContent({
     reasoningSteps,
     isReasoning,
 }: MessageContentProps) {
+    console.log('[MessageContent Debug] Rendering with:', { 
+        contentLength: content.length, 
+        content: content.substring(0, 50), 
+        isUser, 
+        isStreaming, 
+        messageId 
+    })
+    
     // 用户消息使用简单渲染
     if (isUser) {
         return (

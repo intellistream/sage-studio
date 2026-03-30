@@ -184,13 +184,13 @@ class PlaygroundExecutor:
             logger.info(f"   🌐 原始 api_base: '{api_base}'")
 
             if not api_base:
-                from sage.common.config.ports import SagePorts
+                from sage.studio.config.ports import StudioPorts
 
                 detected = None
                 for port in [
-                    SagePorts.get_recommended_llm_port(),
-                    SagePorts.LLM_DEFAULT,
-                    SagePorts.BENCHMARK_LLM,
+                    StudioPorts.get_recommended_llm_port(),
+                    StudioPorts.LLM_DEFAULT,
+                    StudioPorts.SAGELLM_SERVE_PORT,
                 ]:
                     candidate = f"http://127.0.0.1:{port}/v1"
                     if self._probe_url(candidate, timeout=1.0):
@@ -223,6 +223,35 @@ class PlaygroundExecutor:
                 converted_config["seed"] = 42
 
             # 将所有配置包装到 config 字典中（算子期望接收的格式）
+            return converted_config
+
+        # SageLLMNode 参数转换 — 通过 HTTP 接入 SageLLM gateway（OpenAI-compatible）
+        elif op_type == "SageLLMNode":
+            # 解析 gateway URL: 优先 SAGE_LLM_GATEWAY_URL env，其次注册表，其次默认端口 8889
+            try:
+                from sage.libs.llm.gateway import get_gateway_url
+
+                gateway_base = get_gateway_url()
+            except Exception:
+                from sage.studio.config.ports import StudioPorts
+
+                gateway_base = f"http://localhost:{StudioPorts.GATEWAY}"
+
+            # 若配置中已有 api_base / base_url，优先使用
+            api_base = converted_config.pop("api_base", "") or converted_config.get("base_url", "")
+            if not api_base:
+                api_base = f"{gateway_base}/v1"
+            converted_config["base_url"] = api_base.rstrip("/")
+            logger.info(f"   🔗 SageLLMNode → SageLLM gateway: {converted_config['base_url']}")
+
+            # api_key: SageLLM gateway 接受 "EMPTY"，也可通过 SAGE_LLM_API_KEY 覆盖
+            if not converted_config.get("api_key"):
+                converted_config["api_key"] = os.getenv("SAGE_LLM_API_KEY", "EMPTY")
+
+            converted_config["method"] = "openai"
+            if "seed" not in converted_config:
+                converted_config["seed"] = 42
+
             return converted_config
 
         # ChromaRetriever 参数转换
@@ -359,6 +388,7 @@ class PlaygroundExecutor:
                     rag_config_operators = [
                         "OpenAIGenerator",
                         "HFGenerator",
+                        "SageLLMNode",
                         "ChromaRetriever",
                         "SimpleRetriever",
                         "BGEReranker",
@@ -503,11 +533,12 @@ class PlaygroundExecutor:
 
                 return RefinerOperator
 
-            elif operator_type == "VLLMModelNode":
-                # TODO: 添加 vLLM 节点支持
-                # Issue URL: https://github.com/intellistream/SAGE/issues/1107
-                logger.warning("VLLMModelNode 暂不支持")
-                return None
+            elif operator_type == "SageLLMNode":
+                # SageLLM 通过 HTTP OpenAI-compatible API 接入（SAGE 与 SageLLM 解耦）
+                # 使用 sage.libs.llm.gateway.get_gateway_url() 解析 endpoint
+                from sage.middleware.operators.rag import OpenAIGenerator
+
+                return OpenAIGenerator
 
             else:
                 logger.warning(f"未知的操作符类型: {operator_type}")

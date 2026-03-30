@@ -9,30 +9,23 @@
  */
 
 import { create } from 'zustand'
-import type { ChatSessionSummary } from '../services/api'
 import type {
+    ChatMessage,
+    ChatSessionSummary,
     ReasoningStep,
-    ReasoningStepType,
-    ReasoningStepStatus,
-    ToolCallMetadata,
-} from '../components/ReasoningAccordion'
+} from './chatDomain'
 
 type SetState<T> = (partial: T | Partial<T> | ((state: T) => T | Partial<T>)) => void
 type GetState<T> = () => T
 
-export interface ChatMessage {
-    id: string
-    role: 'user' | 'assistant' | 'system'
-    content: string
-    timestamp: string
-    isStreaming?: boolean
-    isReasoning?: boolean  // 是否正在推理中
-    reasoningSteps?: ReasoningStep[]  // 推理步骤
-    metadata?: Record<string, unknown>
-}
-
 // 导出类型供其他组件使用
-export type { ReasoningStep, ReasoningStepType, ReasoningStepStatus, ToolCallMetadata }
+export type {
+    ChatMessage,
+    ReasoningStep,
+    ReasoningStepType,
+    ReasoningStepStatus,
+    ToolCallMetadata,
+} from './chatDomain'
 
 interface ChatState {
     // 当前会话
@@ -65,6 +58,7 @@ interface ChatState {
     setMessages: (sessionId: string, messages: ChatMessage[]) => void
     addMessage: (sessionId: string, message: ChatMessage) => void
     updateMessage: (sessionId: string, messageId: string, content: string) => void
+    updateMessageMetadata: (sessionId: string, messageId: string, metadata: Record<string, unknown>) => void
     appendToMessage: (sessionId: string, messageId: string, chunk: string) => void
 
     // 推理步骤相关
@@ -160,16 +154,31 @@ export const useChatStore = create<ChatState>((
         }
     }),
 
-    appendToMessage: (sessionId: string, messageId: string, chunk: string) => set((state: ChatState) => {
+    updateMessageMetadata: (sessionId: string, messageId: string, metadata: Record<string, unknown>) => set((state: ChatState) => {
         const sessionMessages = state.messages[sessionId] || []
         return {
             messages: {
                 ...state.messages,
                 [sessionId]: sessionMessages.map((msg: ChatMessage) =>
                     msg.id === messageId
-                        ? { ...msg, content: msg.content + chunk }
+                        ? { ...msg, metadata: { ...(msg.metadata || {}), ...metadata } }
                         : msg
                 ),
+            },
+        }
+    }),
+
+    appendToMessage: (sessionId: string, messageId: string, chunk: string) => set((state: ChatState) => {
+        const sessionMessages = state.messages[sessionId] || []
+        const updatedMessages = sessionMessages.map((msg: ChatMessage) =>
+            msg.id === messageId
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+        )
+        return {
+            messages: {
+                ...state.messages,
+                [sessionId]: updatedMessages,
             },
         }
     }),
@@ -262,3 +271,8 @@ export const useChatStore = create<ChatState>((
         }
     },
 }))
+
+export const selectSessions = (state: ChatState): ChatSessionSummary[] => state.sessions
+export const selectCurrentSessionId = (state: ChatState): string | null => state.currentSessionId
+export const selectMessagesBySession = (sessionId: string) => (state: ChatState): ChatMessage[] =>
+    state.messages[sessionId] || []

@@ -5,10 +5,10 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from typer.testing import CliRunner
 
 # Import from sage-cli (which hosts the studio command)
 from sage.cli.main import app as sage_app
+from typer.testing import CliRunner
 
 # Test runner
 runner = CliRunner()
@@ -50,7 +50,7 @@ class FakeStudioManager:
         self._running = True
         return True
 
-    def stop(self, stop_infrastructure=False):
+    def stop(self, stop_gateway=False, stop_llm=False):
         was_running = self._running
         self._running = False
         return was_running
@@ -87,7 +87,7 @@ def mock_studio_manager():
 def test_studio_start_command(mock_studio_manager):
     """Test that 'sage studio start' command works."""
     # Patch at the import location before CLI invocation
-    with patch("sage.cli.commands.apps.studio.studio_manager", mock_studio_manager):
+    with patch("sage.studio.cli.studio_manager", mock_studio_manager):
         result = runner.invoke(
             sage_app, ["studio", "start", "--host", "127.0.0.1", "--port", "9001"]
         )
@@ -107,7 +107,7 @@ def test_studio_start_command(mock_studio_manager):
 
 def test_studio_status_command(mock_studio_manager):
     """Test that 'sage studio status' command works."""
-    with patch("sage.cli.commands.apps.studio.studio_manager", mock_studio_manager):
+    with patch("sage.studio.cli.studio_manager", mock_studio_manager):
         result = runner.invoke(sage_app, ["studio", "status"])
         assert result.exit_code == 0
 
@@ -117,7 +117,7 @@ def test_studio_stop_command(mock_studio_manager):
     # Start the manager first
     mock_studio_manager._running = True
 
-    with patch("sage.cli.commands.apps.studio.studio_manager", mock_studio_manager):
+    with patch("sage.studio.cli.studio_manager", mock_studio_manager):
         result = runner.invoke(sage_app, ["studio", "stop"])
         assert result.exit_code == 0
         # After stop command, manager should not be running
@@ -126,14 +126,14 @@ def test_studio_stop_command(mock_studio_manager):
 
 def test_studio_install_command(mock_studio_manager):
     """Test that 'sage studio install' command works."""
-    with patch("sage.cli.commands.apps.studio.studio_manager", mock_studio_manager):
+    with patch("sage.studio.cli.studio_manager", mock_studio_manager):
         result = runner.invoke(sage_app, ["studio", "install"])
         assert result.exit_code == 0
 
 
 def test_studio_build_command(mock_studio_manager):
     """Test that 'sage studio build' command works."""
-    with patch("sage.cli.commands.apps.studio.studio_manager", mock_studio_manager):
+    with patch("sage.studio.cli.studio_manager", mock_studio_manager):
         result = runner.invoke(sage_app, ["studio", "build"])
         assert result.exit_code == 0
 
@@ -147,7 +147,7 @@ def test_studio_help_command():
 
 def test_studio_npm_command(mock_studio_manager):
     """Test that 'sage studio npm install' command works."""
-    with patch("sage.cli.commands.apps.studio.studio_manager", mock_studio_manager):
+    with patch("sage.studio.cli.studio_manager", mock_studio_manager):
         result = runner.invoke(sage_app, ["studio", "npm", "install"])
         assert result.exit_code == 0
         assert getattr(mock_studio_manager, "_last_npm", None) == ["install"]

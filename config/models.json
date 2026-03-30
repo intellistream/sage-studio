@@ -1,0 +1,16 @@
+[
+    {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct",
+        "base_url": "http://localhost:9001/v1",
+        "is_local": true,
+        "default": true
+    },
+    {
+        "name": "BAAI/bge-large-zh-v1.5",
+        "engine_kind": "embedding",
+        "is_local": true,
+        "default": true,
+        "description": "Large Chinese embedding (1024d)",
+        "dim": 1024
+    }
+]

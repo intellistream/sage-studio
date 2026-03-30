@@ -7,8 +7,20 @@ import pytest
 from sage.studio.services.node_registry import NodeRegistry  # type: ignore[import-not-found]
 
 
+def _register_map_only(self):
+    """Minimal _register_default_operators stub: register only the base MapOperator."""
+    from sage.common.core.functions import MapFunction as MapOperator
+
+    self._registry["map"] = MapOperator
+
+
 class TestNodeRegistry:
     """测试 NodeRegistry 功能"""
+
+    @pytest.fixture(autouse=True)
+    def patch_register_operators(self, monkeypatch):
+        """Patch _register_default_operators so tests don't require sage.middleware."""
+        monkeypatch.setattr(NodeRegistry, "_register_default_operators", _register_map_only)
 
     def test_registry_initialization(self):
         """测试 Registry 初始化"""
@@ -135,6 +147,18 @@ class TestNodeRegistry:
         # 验证获取到的是第二个
         result_cls = registry.get_operator("test_type")
         assert result_cls is SecondOperator
+
+    def test_diagnose_dependencies_returns_structured_result(self):
+        registry = NodeRegistry()
+        diagnostics = registry.diagnose_dependencies()
+
+        assert isinstance(diagnostics, list)
+        if diagnostics:
+            sample = diagnostics[0]
+            assert "node_type" in sample
+            assert "status" in sample
+            assert "module" in sample
+            assert "symbol" in sample
 
 
 if __name__ == "__main__":

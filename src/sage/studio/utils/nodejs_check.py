@@ -3,7 +3,6 @@
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from rich.console import Console
 
@@ -13,7 +12,7 @@ console = Console()
 MIN_NODE_VERSION = (18, 0, 0)  # Node.js 18.x+
 
 
-def parse_node_version(version_string: str) -> Optional[tuple[int, int, int]]:
+def parse_node_version(version_string: str) -> tuple[int, int, int] | None:
     """Parse Node.js version string (e.g., 'v18.12.0') into tuple (18, 12, 0)"""
     match = re.match(r"v?(\d+)\.(\d+)\.(\d+)", version_string)
     if match:
@@ -21,7 +20,7 @@ def parse_node_version(version_string: str) -> Optional[tuple[int, int, int]]:
     return None
 
 
-def check_node_version() -> tuple[bool, Optional[str]]:
+def check_node_version() -> tuple[bool, str | None]:
     """Check if Node.js is installed and meets minimum version requirement.
 
     Returns:

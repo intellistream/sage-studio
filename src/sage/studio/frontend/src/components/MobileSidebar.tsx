@@ -7,7 +7,8 @@
 
 import { X, Plus, MessageSquare, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Dropdown, Spin } from 'antd'
-import type { ChatSessionSummary } from '../services/api'
+import type { ChatSessionSummary, VidaStatus } from '../services/api'
+import VidaStatusCard from './VidaStatusCard'
 
 interface MobileSidebarProps {
     isOpen: boolean
@@ -18,6 +19,7 @@ interface MobileSidebarProps {
     onSessionClick: (sessionId: string) => void
     onDeleteSession: (sessionId: string) => void
     onNewChat: () => void
+    vidaStatus: VidaStatus | null
 }
 
 export default function MobileSidebar({
@@ -29,6 +31,7 @@ export default function MobileSidebar({
     onSessionClick,
     onDeleteSession,
     onNewChat,
+    vidaStatus,
 }: MobileSidebarProps) {
     const handleSessionClick = (sessionId: string) => {
         onSessionClick(sessionId)
@@ -82,6 +85,11 @@ export default function MobileSidebar({
                         <Plus size={20} />
                         <span>New chat</span>
                     </button>
+                </div>
+
+                {/* VIDA Status Card */}
+                <div className="px-3 pb-1">
+                    <VidaStatusCard status={vidaStatus} />
                 </div>
 
                 {/* Session List */}

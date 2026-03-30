@@ -9,13 +9,14 @@ import StatusBar from './components/StatusBar'
 import LogViewer from './components/LogViewer'
 import ChatMode from './components/ChatMode'
 import FinetunePanel from './components/FinetunePanel'
+import VidaAgentPanel from './components/VidaAgentPanel'
 import { LoginPage } from './components/LoginPage'
 import { useAuthStore } from './store/authStore'
 import { useIsMobile } from './hooks/useIsMobile'
 
 const { Header, Footer } = Layout
 
-export type AppMode = 'chat' | 'canvas' | 'finetune'
+export type AppMode = 'chat' | 'canvas' | 'finetune' | 'agent'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
     const { isAuthenticated, isLoading, checkAuth } = useAuthStore()
@@ -329,10 +330,15 @@ function StudioLayout() {
                 <div style={{ flex: 1, overflow: 'hidden' }}>
                     <ChatMode onModeChange={setMode} isMobile={isMobile} />
                 </div>
-            ) : (
+            ) : effectiveMode === 'finetune' ? (
                 /* Finetune 模式 - 模型微调 (Desktop only) */
                 <div style={{ flex: 1, overflow: 'hidden' }} className="bg-[--gemini-main-bg]">
                     <FinetunePanel />
+                </div>
+            ) : (
+                /* Agent 模式 - VIDA 运行时状态面板 */
+                <div style={{ flex: 1, overflow: 'hidden' }} className="bg-[--gemini-main-bg]">
+                    <VidaAgentPanel />
                 </div>
             )}
 

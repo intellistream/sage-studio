@@ -1,0 +1,11 @@
+[
+    {
+        "name": "Qwen/Qwen2.5-0.5B-Instruct",
+        "base_url": "http://127.0.0.1:8901/v1",
+        "is_local": true,
+        "description": "CPU-friendly (0.5B, ~2GB RAM)",
+        "hardware": "CPU",
+        "default": true,
+        "api_key": ""
+    }
+]

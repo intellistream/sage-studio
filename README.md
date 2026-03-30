@@ -68,19 +68,54 @@ Studio 采用**前后端分离**架构，直接接入 SAGE 核心引擎：
 - **Node.js**: 18+ (推荐 LTS)
 - **SAGE**: 完整安装 (包括 kernel, middleware, libs)
 
-### 安装 SAGE Studio
+### 快速安装（推荐）
+
+使用 `quickstart.sh` 一键安装所有依赖：
 
 ```bash
-# 方式 1: 通过 SAGE 元包安装（推荐）
+# 克隆仓库
+git clone https://github.com/intellistream/sage-studio.git
+cd sage-studio
+
+# 运行快速安装脚本
+./quickstart.sh
+```
+
+**脚本功能：**
+- ✅ 检查 Python/Node.js 环境
+- ✅ 使用当前激活的 Python 环境安装依赖
+- ✅ 安装 Python 依赖（开发模式）
+- ✅ 安装前端依赖（npm）
+- ✅ 验证 SAGE 核心依赖
+- ✅ 显示下一步操作指南
+
+### 手动安装
+
+```bash
+# 方式 1: 通过 SAGE 元包安装（推荐生产环境）
 pip install isage  # 自动包含 isage-studio
 
 # 方式 2: 开发模式安装
-cd packages/sage-studio
-pip install -e .
+cd sage-studio
+pip install -e ".[dev]"
+
+# 安装前端依赖
+cd src/sage/studio/frontend
+npm install
 
 # 验证安装
 python -c "from sage.studio.studio_manager import StudioManager; print('✓ Studio installed')"
 ```
+
+## 🧩 目录职责边界
+
+- `src/sage/studio/cli.py`: CLI 参数解析与调度入口
+- `src/sage/studio/chat_manager.py` / `studio_manager.py`: 对外管理器 facade
+- `src/sage/studio/application/`: 管理器实现层（`chat_manager.py`、`studio_manager.py`）
+- `src/sage/studio/supervisor/`: 进程、端口、健康检查、启动报告等编排组件
+- `src/sage/studio/frontend/src/services/api/`: 前端按领域拆分的 API 模块
+
+Phase 1 边界与依赖审计文档：`docs/boundary_phase1.md`
 
 ## 📖 Quick Start
 
@@ -111,6 +146,41 @@ sage studio npm install    # 安装/更新 npm 依赖
 sage studio npm run lint   # 运行前端脚本
 ```
 
+### 🖥️ CPU 推理支持（新功能）
+
+**SAGE Studio 现已支持 CPU 友好的小模型推理，无需 GPU！**
+
+#### 快速启动 CPU 模型
+
+```bash
+# 方法 1: 使用一键启动脚本（推荐）
+cd sage-studio
+./start_cpu_model.sh
+
+# 方法 2: 手动启动（自定义配置）
+sage llm engine start Qwen/Qwen2.5-0.5B-Instruct --engine-kind llm --port 8901
+```
+
+#### 可用的 CPU 模型
+
+| 模型 | 大小 | 内存需求 | 推荐场景 |
+|------|------|---------|---------|
+| **Qwen/Qwen2.5-0.5B-Instruct** ⭐ | 0.5B | ~2GB | 最快速度，适合原型开发 |
+| **TinyLlama-1.1B-Chat** | 1.1B | ~2.5GB | 轻量对话，测试流水线 |
+| **Qwen/Qwen2.5-1.5B-Instruct** | 1.5B | ~4GB | 平衡性能和速度 |
+| **Qwen/Qwen2.5-3B-Instruct** | 3B | ~8GB | 更好质量（CPU/GPU 均可） |
+
+⭐ = 最推荐的 CPU 模型
+
+#### 使用步骤
+
+1. **启动模型**：运行上述命令启动 CPU 模型
+2. **刷新页面**：刷新 Studio 浏览器页面
+3. **选择模型**：点击右上角模型选择器，选择已启动的模型
+4. **开始使用**：状态指示灯变绿后即可使用
+
+📖 **完整指南**：查看 [`docs/CPU_INFERENCE_GUIDE.md`](docs/CPU_INFERENCE_GUIDE.md) 了解详细配置和优化技巧。
+
 ## 🔐 Authentication & Security
 
 SAGE Studio v2.0 引入了完整的用户认证和数据隔离系统：
@@ -132,8 +202,8 @@ SAGE Studio v2.0 引入了完整的用户认证和数据隔离系统：
 
 **访问地址**：
 
-- 🌐 前端：http://localhost:5173
-- 🔌 后端：http://localhost:8080
+- 🌐 前端：http://localhost:${STUDIO_FRONTEND_PORT}
+- 🔌 后端：http://localhost:${STUDIO_BACKEND_PORT}
 
 **注意**：首次使用或开发调试时，建议使用 `--dev` 开发模式，启动更快且支持热重载。
 
@@ -143,24 +213,24 @@ SAGE Studio v2.0 引入了完整的用户认证和数据隔离系统：
 # 终端 1: 启动后端
 cd packages/sage-studio
 python -m sage.studio.config.backend.api
-# 后端运行在: http://localhost:8080
+# 后端运行在: http://localhost:${STUDIO_BACKEND_PORT}
 
 # 终端 2: 启动前端
 cd packages/sage-studio/src/sage/studio/frontend
 sage studio npm install
 sage studio npm run dev
-# 前端运行在: http://localhost:5173
+# 前端运行在: http://localhost:${STUDIO_FRONTEND_PORT}
 ```
 
 ### 检查服务状态
 
 ```bash
 # 检查端口
-lsof -i :8080  # 后端
-lsof -i :5173  # 前端
+lsof -i :${STUDIO_BACKEND_PORT}  # 后端
+lsof -i :${STUDIO_FRONTEND_PORT}  # 前端
 
 # 检查后端健康
-curl http://localhost:8080/health
+curl http://localhost:${STUDIO_BACKEND_PORT}/health
 
 # 查看日志
 tail -f /tmp/sage-studio-backend.log
@@ -173,7 +243,7 @@ tail -f /tmp/sage-studio-frontend.log
 
 **步骤**:
 
-1. 在浏览器打开 http://localhost:5173
+1. 在浏览器打开 http://localhost:${STUDIO_FRONTEND_PORT}
 1. 从左侧节点面板拖拽节点到画布
 1. 连接节点创建数据流
 1. 点击节点配置参数（右侧属性面板）
@@ -266,7 +336,7 @@ FileSource → SimpleRetriever → BGEReranker → QAPromptor → OpenAIGenerato
 cd src/sage/studio/frontend
 
 # 开发模式
-sage studio npm run dev          # 启动 Vite dev server (localhost:5173)
+sage studio npm run dev          # 启动 Vite dev server (localhost:$STUDIO_FRONTEND_PORT)
 
 # 生产构建
 sage studio npm run build        # 构建到 dist/
@@ -286,10 +356,10 @@ cd packages/sage-studio
 python -m sage.studio.config.backend.api
 
 # 验证运行
-curl http://localhost:8080/health
+curl http://localhost:${STUDIO_BACKEND_PORT}/health
 
 # 查看 API 文档
-open http://localhost:8080/docs  # Swagger UI
+open http://localhost:${STUDIO_BACKEND_PORT}/docs  # Swagger UI
 ```
 
 ## 📂 目录结构
@@ -466,9 +536,9 @@ FastAPI + Python 3.10+
 ### 数据流
 
 ```
-前端 (localhost:5173)
+前端 (localhost:$STUDIO_FRONTEND_PORT)
     ↓ HTTP REST
-后端 API (localhost:8080)
+后端 API (localhost:$STUDIO_BACKEND_PORT)
     ↓ Python API
 SAGE 引擎
     ├─> sage-kernel (执行引擎)
@@ -563,8 +633,8 @@ elif source_type == "my_source":
 
 ```bash
 # 1. 检查端口占用
-lsof -i :5173  # 前端
-lsof -i :8080  # 后端
+lsof -i :${STUDIO_FRONTEND_PORT}  # 前端
+lsof -i :${STUDIO_BACKEND_PORT}  # 后端
 
 # 2. 查看日志
 sage studio logs          # 前端日志
@@ -575,8 +645,8 @@ tail -f ~/.sage/studio_backend.log
 tail -f ~/.sage/studio.log
 
 # 3. 测试后端 API
-curl http://localhost:8080/health
-curl http://localhost:8080/api/operators
+curl http://localhost:${STUDIO_BACKEND_PORT}/health
+curl http://localhost:${STUDIO_BACKEND_PORT}/api/operators
 
 # 4. 清理缓存
 rm -rf ~/.sage/studio/node_modules
@@ -691,7 +761,7 @@ sage studio npm run lint
 ps aux | grep "sage.studio.config.backend.api"
 
 # 检查端口
-lsof -i :8080
+lsof -i :${STUDIO_BACKEND_PORT}
 
 # 查看日志
 tail -f /tmp/sage-studio-backend.log
@@ -705,7 +775,7 @@ python -m sage.studio.config.backend.api &
 
 - ❌ SAGE 包未正确安装 → `pip install -e packages/sage-kernel packages/sage-middleware packages/sage-libs`
 - ❌ 缺少依赖 → `pip install -e packages/sage-studio`
-- ❌ 端口被占用 → `lsof -i :8080` 查看占用进程
+- ❌ 端口被占用 → `lsof -i :${STUDIO_BACKEND_PORT}` 查看占用进程
 
 #### 2. 前端编译/启动错误
 
@@ -726,7 +796,7 @@ sage studio npm run dev
 
 - ❌ Node.js 版本过低 → 需要 18+
 - ❌ npm 依赖损坏 → 删除 `node_modules` 重新安装
-- ❌ 端口被占用 → Vite 会自动尝试 5174, 5175...
+- ❌ 端口被占用 → Vite 会自动尝试下一个可用端口
 
 #### 3. Pipeline 执行失败
 
@@ -736,8 +806,8 @@ tail -f /tmp/sage-studio-backend.log
 
 # 检查 SAGE 安装
 python -c "from sage.kernel.api import LocalEnvironment; print('✓ kernel OK')"
-python -c "from sage.middleware.rag import OpenAIGenerator; print('✓ middleware OK')"
-python -c "from sage.libs.io.source import FileSource; print('✓ libs OK')"
+python -c "from sage.middleware.operators.rag import OpenAIGenerator; print('✓ middleware OK')"
+python -c "from sage.libs.foundation.io.source import FileSource; print('✓ libs OK')"
 ```
 
 **可能原因**:
@@ -750,10 +820,26 @@ python -c "from sage.libs.io.source import FileSource; print('✓ libs OK')"
 
 ```bash
 # 检查 Flow 是否保存
+
+#### 5. Chat SSE 返回 `stream_timeout_waiting_for_runtime`
+
+首次冷启动（尤其是本地模型加载/Flownet 初始化）时，SSE 可能在较长时间内只有 keepalive。
+
+可通过环境变量放宽等待窗口（默认约 120 秒）：
+
+```bash
+export STUDIO_CHAT_SSE_MAX_KEEPALIVE_COUNT=18
+sage studio restart
+```
+
+说明：
+
+- `STUDIO_CHAT_SSE_MAX_KEEPALIVE_COUNT` × 10 秒（keepalive 间隔）≈ 最大等待时长
+- 该超时是显式错误提示，不会回退到 mock 响应
 ls ~/.sage/pipelines/
 
 # 检查后端 API
-curl -X POST http://localhost:8080/api/playground/execute \
+curl -X POST http://localhost:${STUDIO_BACKEND_PORT}/api/playground/execute \
   -H "Content-Type: application/json" \
   -d '{"flowId": "pipeline_xxx", "input": "test", "sessionId": "test"}'
 ```
@@ -761,19 +847,19 @@ curl -X POST http://localhost:8080/api/playground/execute \
 **可能原因**:
 
 - ❌ Flow 未保存 → 先保存 Flow
-- ❌ 后端未启动 → 检查 `lsof -i :8080`
+- ❌ 后端未启动 → 检查 `lsof -i :${STUDIO_BACKEND_PORT}`
 - ❌ 网络请求失败 → 检查浏览器控制台
 
 #### 5. 端口被占用
 
 ```bash
 # 查看占用
-lsof -i :5173  # 前端
-lsof -i :8080  # 后端
+lsof -i :${STUDIO_FRONTEND_PORT}  # 前端
+lsof -i :${STUDIO_BACKEND_PORT}  # 后端
 
 # 杀死进程
-kill -9 $(lsof -t -i:5173)
-kill -9 $(lsof -t -i:8080)
+kill -9 $(lsof -t -i:${STUDIO_FRONTEND_PORT})
+kill -9 $(lsof -t -i:${STUDIO_BACKEND_PORT})
 
 # 或使用 SAGE CLI
 sage studio stop
@@ -804,8 +890,8 @@ pwd  # 应该在 SAGE 项目根目录或 sage-studio 目录
 ```bash
 # 1. 停止所有服务
 sage studio stop
-kill -9 $(lsof -t -i:8080)
-kill -9 $(lsof -t -i:5173)
+kill -9 $(lsof -t -i:${STUDIO_BACKEND_PORT})
+kill -9 $(lsof -t -i:${STUDIO_FRONTEND_PORT})
 
 # 2. 清理缓存
 rm -rf ~/.sage/studio/

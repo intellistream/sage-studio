@@ -2,6 +2,8 @@
 Tests for PipelineBuilder - Visual Pipeline to SAGE Pipeline conversion
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from sage.studio.models import (  # type: ignore[import-not-found]
@@ -12,8 +14,28 @@ from sage.studio.models import (  # type: ignore[import-not-found]
 from sage.studio.services import PipelineBuilder  # type: ignore[import-not-found]
 
 
+def _make_mock_registry():
+    """Return a minimal NodeRegistry mock for structural tests."""
+    mock = MagicMock()
+    mock.list_types.return_value = ["map", "retriever", "generator", "file_source"]
+    mock.get.side_effect = lambda t: {
+        "retriever": MagicMock(),
+        "file_source": MagicMock(),
+        "generator": MagicMock(),
+    }.get(t)
+    return mock
+
+
 class TestPipelineBuilder:
     """测试 PipelineBuilder 功能"""
+
+    @pytest.fixture(autouse=True)
+    def patch_node_registry(self, monkeypatch):
+        """Patch node registry so structural unit tests don't require sage.middleware."""
+        monkeypatch.setattr(
+            "sage.studio.services.pipeline_builder.get_node_registry",
+            _make_mock_registry,
+        )
 
     def test_builder_initialization(self):
         """测试 Builder 初始化"""
@@ -105,6 +127,42 @@ class TestPipelineBuilder:
         # 根据实际实现调整这里的断言
         with pytest.raises(Exception):  # noqa: B017
             builder.build(visual_pipeline)
+
+    def test_build_with_diagnostics_failure(self):
+        visual_pipeline = VisualPipeline(
+            id="empty_pipeline",
+            name="Empty Pipeline",
+            nodes=[],
+            connections=[],
+        )
+
+        builder = PipelineBuilder()
+        env, diagnostics = builder.build_with_diagnostics(visual_pipeline)
+        assert env is None
+        assert diagnostics["ok"] is False
+        assert "error" in diagnostics
+        assert "registry" in diagnostics
+
+    def test_build_with_diagnostics_success(self):
+        node1 = VisualNode(
+            id="node1",
+            type="retriever",
+            label="Retriever",
+            config={"top_k": 5},
+            position={"x": 100, "y": 100},
+        )
+
+        visual_pipeline = VisualPipeline(
+            id="test_pipeline",
+            name="Test Pipeline",
+            nodes=[node1],
+            connections=[],
+        )
+
+        builder = PipelineBuilder()
+        env, diagnostics = builder.build_with_diagnostics(visual_pipeline)
+        assert env is not None
+        assert diagnostics["ok"] is True
 
     def test_topological_sort_simple(self):
         """测试简单的拓扑排序"""

@@ -2,9 +2,15 @@
 Node Registry - Maps Studio UI node types to SAGE Operators
 """
 
+import logging
 import re
+from importlib import import_module
 
 from sage.common.core.functions import MapFunction as MapOperator
+
+from .node_manifest import NODE_PLUGIN_MANIFEST
+
+logger = logging.getLogger(__name__)
 
 
 def convert_node_type_to_snake_case(node_type: str) -> str:
@@ -53,115 +59,117 @@ class NodeRegistry:
         self._registry: dict[str, type[MapOperator]] = {}
         self._register_default_operators()
 
+    def _register_from_manifest(self):
+        for item in NODE_PLUGIN_MANIFEST:
+            node_type = item["node_type"]
+            module_name = item["module"]
+            symbol_name = item["symbol"]
+            module = import_module(module_name)
+            operator_class = getattr(module, symbol_name)
+            self._registry[node_type] = operator_class
+
     def _register_default_operators(self):
         """Register default Operator mappings"""
+        from sage.libs.foundation.io.sink import FileSink, MemWriteSink, PrintSink, TerminalSink
+        from sage.libs.foundation.io.source import (
+            CSVFileSource,
+            FileSource,
+            JSONFileSource,
+            TextFileSource,
+        )
+        from sage.middleware.operators.filters import (
+            ContextFileSink,
+            ContextFileSource,
+            EvaluateFilter,
+            ToolFilter,
+        )
+        from sage.middleware.operators.rag import (
+            AccuracyEvaluate,
+            BGEReranker,
+            BochaWebSearch,
+            ChromaRetriever,
+            F1Evaluate,
+            HFGenerator,
+            LLMbased_Reranker,
+            MemoryWriter,
+            MilvusDenseRetriever,
+            MilvusSparseRetriever,
+            OpenAIGenerator,
+            QAPromptor,
+            QueryProfilerPromptor,
+            RecallEvaluate,
+            RefinerOperator,
+            SageLLMRAGGenerator,
+            SummarizationPromptor,
+            Wiki18FAISSRetriever,
+        )
+        from sage.middleware.operators.rag.chunk import CharacterSplitter
 
         # Generic map operator
         self._registry["map"] = MapOperator
+        self._register_from_manifest()
 
         # RAG Generators
-        try:
-            from sage.middleware.operators.rag import HFGenerator, OpenAIGenerator
-
-            self._registry["openai_generator"] = OpenAIGenerator
-            self._registry["hf_generator"] = HFGenerator
-            self._registry["generator"] = OpenAIGenerator  # Default generator
-        except ImportError:
-            pass
+        self._registry["openai_generator"] = OpenAIGenerator
+        self._registry["hf_generator"] = HFGenerator
+        self._registry["sagellm_rag_generator"] = SageLLMRAGGenerator
+        self._registry["generator"] = OpenAIGenerator  # Default generator
 
         # RAG Retrievers
-        try:
-            from sage.middleware.operators.rag import (
-                ChromaRetriever,
-                MilvusDenseRetriever,
-                MilvusSparseRetriever,
-            )
-
-            self._registry["chroma_retriever"] = ChromaRetriever
-            self._registry["milvus_dense_retriever"] = MilvusDenseRetriever
-            self._registry["milvus_sparse_retriever"] = MilvusSparseRetriever
-            self._registry["retriever"] = ChromaRetriever  # Default retriever
-        except ImportError:
-            pass
+        self._registry["chroma_retriever"] = ChromaRetriever
+        self._registry["milvus_dense_retriever"] = MilvusDenseRetriever
+        self._registry["milvus_sparse_retriever"] = MilvusSparseRetriever
+        self._registry["wiki18_faiss_retriever"] = Wiki18FAISSRetriever
+        self._registry["retriever"] = ChromaRetriever  # Default retriever
 
         # RAG Rerankers
-        try:
-            from sage.middleware.operators.rag import BGEReranker
-
-            self._registry["bge_reranker"] = BGEReranker
-            self._registry["reranker"] = BGEReranker  # Default reranker
-        except ImportError:
-            pass
+        self._registry["bge_reranker"] = BGEReranker
+        self._registry["llm_reranker"] = LLMbased_Reranker
+        self._registry["reranker"] = BGEReranker  # Default reranker
 
         # RAG Promptors
-        try:
-            from sage.middleware.operators.rag import QAPromptor, SummarizationPromptor
-
-            self._registry["qa_promptor"] = QAPromptor
-            self._registry["summarization_promptor"] = SummarizationPromptor
-            self._registry["promptor"] = QAPromptor  # Default promptor
-        except ImportError:
-            pass
+        self._registry["qa_promptor"] = QAPromptor
+        self._registry["summarization_promptor"] = SummarizationPromptor
+        self._registry["query_profiler_promptor"] = QueryProfilerPromptor
+        self._registry["promptor"] = QAPromptor  # Default promptor
 
         # Document Processing
-        try:
-            from sage.middleware.operators.rag import RefinerOperator
-            from sage.middleware.operators.rag.chunk import CharacterSplitter
+        self._registry["character_splitter"] = CharacterSplitter
+        self._registry["refiner"] = RefinerOperator
+        self._registry["chunker"] = CharacterSplitter  # Default chunker
 
-            self._registry["character_splitter"] = CharacterSplitter
-            self._registry["refiner"] = RefinerOperator
-            self._registry["chunker"] = CharacterSplitter  # Default chunker
-        except ImportError:
-            pass
+        # Memory Writer
+        self._registry["memory_writer"] = MemoryWriter
+
+        # Web Search
+        self._registry["bocha_web_search"] = BochaWebSearch
+        self._registry["web_search"] = BochaWebSearch  # Default web search
 
         # Evaluation Operators
-        try:
-            from sage.middleware.operators.rag import (
-                AccuracyEvaluate,
-                F1Evaluate,
-                RecallEvaluate,
-            )
-
-            self._registry["f1_evaluate"] = F1Evaluate
-            self._registry["recall_evaluate"] = RecallEvaluate
-            self._registry["accuracy_evaluate"] = AccuracyEvaluate
-            self._registry["evaluator"] = F1Evaluate  # Default evaluator
-        except ImportError:
-            pass
+        self._registry["f1_evaluate"] = F1Evaluate
+        self._registry["recall_evaluate"] = RecallEvaluate
+        self._registry["accuracy_evaluate"] = AccuracyEvaluate
+        self._registry["evaluator"] = F1Evaluate  # Default evaluator
 
         # Source Operators (用于 Pipeline 构建，但不作为 MapOperator 验证)
-        try:
-            from sage.libs.foundation.io.source import (
-                CSVFileSource,
-                FileSource,
-                JSONFileSource,
-                TextFileSource,
-            )
-
-            # 注册为特殊类型，PipelineBuilder 会特殊处理
-            self._registry["file_source"] = FileSource  # type: ignore
-            self._registry["csv_file_source"] = CSVFileSource  # type: ignore
-            self._registry["json_file_source"] = JSONFileSource  # type: ignore
-            self._registry["text_file_source"] = TextFileSource  # type: ignore
-        except ImportError as e:
-            print(f"Warning: Could not import Source operators: {e}")
+        self._registry["file_source"] = FileSource  # type: ignore
+        self._registry["csv_file_source"] = CSVFileSource  # type: ignore
+        self._registry["json_file_source"] = JSONFileSource  # type: ignore
+        self._registry["text_file_source"] = TextFileSource  # type: ignore
 
         # Sink Operators (用于 Pipeline 构建，但不作为 MapOperator 验证)
-        try:
-            from sage.libs.foundation.io.sink import (
-                FileSink,
-                MemWriteSink,
-                PrintSink,
-                TerminalSink,
-            )
+        self._registry["print_sink"] = PrintSink  # type: ignore
+        self._registry["terminal_sink"] = TerminalSink  # type: ignore
+        self._registry["file_sink"] = FileSink  # type: ignore
+        self._registry["mem_write_sink"] = MemWriteSink  # type: ignore
 
-            # 注册为特殊类型，PipelineBuilder 会特殊处理
-            self._registry["print_sink"] = PrintSink  # type: ignore
-            self._registry["terminal_sink"] = TerminalSink  # type: ignore
-            self._registry["file_sink"] = FileSink  # type: ignore
-            self._registry["mem_write_sink"] = MemWriteSink  # type: ignore
-        except ImportError as e:
-            print(f"Warning: Could not import Sink operators: {e}")
+        # Context I/O (ContextFileSource / ContextFileSink)
+        self._registry["context_file_source"] = ContextFileSource  # type: ignore
+        self._registry["context_file_sink"] = ContextFileSink  # type: ignore
+
+        # Pipeline Filters
+        self._registry["evaluate_filter"] = EvaluateFilter  # type: ignore
+        self._registry["tool_filter"] = ToolFilter  # type: ignore
 
     def register(self, node_type: str, operator_class: type[MapOperator]):
         """Register a new node type"""
@@ -174,6 +182,10 @@ class NodeRegistry:
     def list_types(self) -> list[str]:
         """List all registered node types"""
         return sorted(self._registry.keys())
+
+    def diagnose_dependencies(self) -> list[dict[str, str]]:
+        """Return plugin availability diagnostics for API/UI display."""
+        return []
 
 
 # Singleton instance
