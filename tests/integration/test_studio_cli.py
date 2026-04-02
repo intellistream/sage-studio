@@ -5,13 +5,17 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
-# Import from sage-cli (which hosts the studio command)
-from sage.cli.main import app as sage_app
+import typer
 from typer.testing import CliRunner
+
+from sage.studio.cli import register_studio_command
 
 # Test runner
 runner = CliRunner()
+
+# Build a minimal root CLI app for testing plugin registration.
+sage_app = typer.Typer()
+register_studio_command(sage_app)
 
 
 class FakeStudioManager:

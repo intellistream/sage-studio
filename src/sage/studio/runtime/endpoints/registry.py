@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sage.studio.runtime.endpoints.contracts import (
     PROVIDER_PRESETS,
@@ -59,7 +59,7 @@ class EndpointRegistry:
             if current is None:
                 raise KeyError(endpoint_id)
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             updated = replace(
                 current,
                 display_name=command.display_name
@@ -92,7 +92,7 @@ class EndpointRegistry:
             current = self._records.get(endpoint_id)
             if current is None:
                 raise KeyError(endpoint_id)
-            updated = replace(current, enabled=enabled, updated_at=datetime.now(timezone.utc))
+            updated = replace(current, enabled=enabled, updated_at=datetime.now(UTC))
             self._records[endpoint_id] = updated
             return updated
 
@@ -140,7 +140,7 @@ class EndpointRegistry:
             self._records.clear()
 
     def _set_default_locked(self, endpoint_id: str) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for record_id, record in list(self._records.items()):
             self._records[record_id] = replace(
                 record,

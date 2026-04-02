@@ -7,7 +7,8 @@ name = "isage-studio"
 dynamic = ["version"]
 description = "SAGE Studio - Visual workflow builder and LLM playground for SAGE AI pipelines"
 readme = "README.md"
-requires-python = ">=3.10"
+# requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "IntelliStream Team", email = "shuhao_zhang@hust.edu.cn" }]
 keywords = [
     "sage",
@@ -95,7 +96,7 @@ full = [
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
-    "ruff==0.15.4",
+    "ruff==0.15.8",
     "isage-pypi-publisher>=0.2.1.0",
 ]
 
@@ -143,7 +144,8 @@ version = { attr = "sage.studio._version.__version__" }
 # Development tools configuration
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312"]
+# target-version = ["py310", "py311", "py312"]
+target-version = ["py311", "py312"]
 include = '\.pyi?$'
 
 [tool.isort]
@@ -187,7 +189,8 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+# target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP"]

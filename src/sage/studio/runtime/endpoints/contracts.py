@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 
 
-class EndpointProvider(str, Enum):
+class EndpointProvider(StrEnum):
     ALIBABA_DASHSCOPE = "alibaba_dashscope"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
@@ -39,8 +39,8 @@ class ManagedEndpoint:
     is_default: bool = False
     extra_headers: tuple[tuple[str, str], ...] = ()
     api_key: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(slots=True, frozen=True)
