@@ -43,8 +43,9 @@ dependencies = [
     "isagellm>=0.5.4.3",
 
     # Agentic dependencies (independent packages)
-    "isage-agentic>=0.1.0.3",
-    "isage-libs-intent>=0.1.0.7", # Intent recognition (L3)
+    # Python 3.10 CI cannot resolve transitive dependency isage-intent from isage-agentic.
+    "isage-agentic>=0.1.0.3; python_version >= '3.11'",
+    "isage-libs-intent>=0.1.0.7",                       # Intent recognition (L3)
 
     # Memory management (independent package)
     "isage-neuromem>=0.2.1.4", # Memory collection & vector storage (L4)
