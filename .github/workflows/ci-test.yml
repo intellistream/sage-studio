@@ -98,6 +98,12 @@ jobs:
             "PyYAML>=6.0.1" \
             "python-multipart>=0.0.6" \
             "jinja2>=3.1.0,<4.0.0" \
+
+      - name: Verify key dependencies
+        run: |
+          python -c "from jose import JWTError, jwt; print('jose OK')"
+          python -c "from passlib.context import CryptContext; print('passlib OK')"
+          python -c "import fastapi; print('fastapi OK')"
             "packaging>=24.0,<27.0"
 
       - name: Run unit tests

@@ -99,6 +99,12 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "ruff==0.15.8",
     "isage-pypi-publisher>=0.2.1.0",
+    # Auth/backend deps required by unit tests (duplicated from core for CI reliability)
+    "python-jose[cryptography]>=3.5.0,<4.0.0",
+    "passlib[argon2]>=1.7.4,<2.0.0",
+    "aiofiles>=23.0.0",
+    "pydantic-settings>=2.0.0",
+    "structlog>=23.0.0",
 ]
 
 [project.urls]
