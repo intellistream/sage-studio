@@ -169,7 +169,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install ruff==0.15.4
+          pip install "ruff>=0.14.0,<0.16.0"
 
       - name: Run Ruff
         run: |
