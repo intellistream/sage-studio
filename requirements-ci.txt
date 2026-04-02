@@ -1,0 +1,31 @@
+# CI test requirements - public PyPI packages only
+# Used by GitHub Actions to bootstrap test environment independently
+# of private SAGE packages (isage, isagellm, etc.)
+
+# Test framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Auth (required by services/auth_service.py)
+python-jose[cryptography]>=3.5.0,<4.0.0
+passlib[argon2]>=1.7.4,<2.0.0
+
+# Backend API
+pydantic[email]>=2.10.0,<3.0.0
+pydantic-settings>=2.0.0
+fastapi>=0.115.0,<1.0.0
+starlette>=0.40,<0.53
+uvicorn[standard]>=0.34.0,<1.0.0
+httpx>=0.28.0,<1.0.0
+python-multipart>=0.0.6
+websockets>=11.0
+
+# Utilities
+aiofiles>=23.0.0
+configparser>=5.3.0
+markdown>=3.4.4,<4.0.0
+structlog>=23.0.0
+jinja2>=3.1.0,<4.0.0
+markupsafe>=2.0.1
+PyYAML>=6.0.1
+packaging>=24.0,<27.0
