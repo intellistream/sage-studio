@@ -75,6 +75,15 @@ dependencies = [
     # SAGE kernel integration (includes sage.middleware.* pipeline layer)
     "isage-kernel>=0.2.5.0",
     "isage-vida>=0.1.0",
+
+    # Backend API / auth / config helpers (required by services layer)
+    "aiofiles>=23.0.0",
+    "configparser>=5.3.0",
+    "markdown>=3.4.4,<4.0.0",
+    "passlib[argon2]>=1.7.4,<2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-jose[cryptography]>=3.5.0,<4.0.0",
+    "structlog>=23.0.0",
 ]
 
 license = { text = "MIT" }
@@ -83,14 +92,6 @@ license = { text = "MIT" }
 full = [
     # Continual-learning / coreset selection for tool-use features
     "isage-sias>=0.1.0",
-    # Backend API / auth / config helpers (optional for lightweight studio installs)
-    "aiofiles>=23.0.0",
-    "configparser>=5.3.0",
-    "markdown>=3.4.4,<4.0.0",
-    "passlib[argon2]>=1.7.4,<2.0.0",
-    "pydantic-settings>=2.0.0",
-    "python-jose[cryptography]>=3.5.0,<4.0.0",
-    "structlog>=23.0.0",
 ]
 
 dev = [
