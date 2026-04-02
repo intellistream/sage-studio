@@ -48,7 +48,8 @@ dependencies = [
     "isage-libs-intent>=0.1.0.7",                       # Intent recognition (L3)
 
     # Memory management (independent package)
-    "isage-neuromem>=0.2.1.4", # Memory collection & vector storage (L4)
+    # Python 3.10 CI cannot resolve neuromem transitive dependency isage-libs>=0.2.4.29.
+    "isage-neuromem>=0.2.1.4; python_version >= '3.11'", # Memory collection & vector storage (L4)
 
     # Data management (independent package)
     "isage-data>=0.2.3.2", # Dataset management (used by finetune data endpoints)
