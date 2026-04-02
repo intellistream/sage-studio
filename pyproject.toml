@@ -37,7 +37,8 @@ dependencies = [
     "isage>=0.2.4.21",
 
     # Flownet runtime (distributed dataflow execution, replaces Ray)
-    "isage-flownet>=0.1.1",
+    # Python 3.10 CI cannot resolve transitive dependency isage-common from flownet.
+    "isage-flownet>=0.1.1; python_version >= '3.11'",
 
     # sageLLM - IntelliStream自研推理引擎（包含Gateway、Control Plane、Backend等完整推理能力）
     "isagellm>=0.5.4.3",
@@ -52,7 +53,8 @@ dependencies = [
     "isage-neuromem>=0.2.1.4; python_version >= '3.11'", # Memory collection & vector storage (L4)
 
     # Data management (independent package)
-    "isage-data>=0.2.3.2", # Dataset management (used by finetune data endpoints)
+    # Python 3.10 CI cannot resolve transitive dependency isage-common from data.
+    "isage-data>=0.2.3.2; python_version >= '3.11'", # Dataset management (used by finetune data endpoints)
 
     # Fine-tune dependencies (independent package)
     # PyPI currently exposes newer finetune builds for 3.11+ while 3.10 resolves up to 0.1.0.3.
@@ -80,7 +82,8 @@ dependencies = [
     # Py3.10 resolves kernel up to 0.2.4.13; newer builds target 3.11+.
     "isage-kernel>=0.2.4.13; python_version == '3.10'",
     "isage-kernel>=0.2.5.0; python_version >= '3.11'",
-    "isage-vida>=0.1.0",
+    # Python 3.10 CI cannot resolve transitive dependency isage-common from vida.
+    "isage-vida>=0.1.0; python_version >= '3.11'",
 ]
 
 license = { text = "MIT" }
