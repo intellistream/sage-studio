@@ -64,7 +64,8 @@ Studio 采用**前后端分离**架构，直接接入 SAGE 核心引擎：
 
 ### Environment Requirements
 
-- **Python**: 3.10+ (必需)
+<!-- - **Python**: 3.10+ (必需) -->
+- **Python**: 3.11+ (必需)
 - **Node.js**: 18+ (推荐 LTS)
 - **SAGE**: 完整安装 (包括 kernel, middleware, libs)
 
@@ -525,7 +526,8 @@ React 18.2 + TypeScript 5.2
 #### 后端
 
 ```
-FastAPI + Python 3.10+
+<!-- FastAPI + Python 3.10+ -->
+FastAPI + Python 3.11+
 ├── Pydantic 2.0            # 数据验证
 ├── Uvicorn                 # ASGI 服务器
 ├── sage-kernel             # Environment, DataStream API
@@ -870,7 +872,8 @@ sage studio start --dev
 
 ```bash
 # 检查 Python 版本
-python --version  # 需要 3.10+
+# python --version  # 需要 3.10+  [deprecated]
+python --version  # 需要 3.11+
 
 # 检查 SAGE 安装
 pip list | grep isage

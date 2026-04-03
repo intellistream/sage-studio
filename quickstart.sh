@@ -83,10 +83,19 @@ fi
 echo -e "${YELLOW}${BOLD}Step 1/3: Checking Python environment${NC}"
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
 echo -e "  Python version: ${CYAN}${PYTHON_VERSION}${NC}"
-if python3 -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
-    echo -e "  ${GREEN}✓ Python ≥ 3.10${NC}"
+# DEPRECATED: Python 3.10 support
+# if python3 -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
+#     echo -e "  ${GREEN}✓ Python ≥ 3.10${NC}"
+# else
+#     echo -e "  ${RED}✗ Python 3.10+ required (found ${PYTHON_VERSION})${NC}"
+#     exit 1
+# fi
+
+# ACTIVE: Python 3.11+ required
+if python3 -c "import sys; exit(0 if sys.version_info >= (3,11) else 1)" 2>/dev/null; then
+    echo -e "  ${GREEN}✓ Python ≥ 3.11${NC}"
 else
-    echo -e "  ${RED}✗ Python 3.10+ required (found ${PYTHON_VERSION})${NC}"
+    echo -e "  ${RED}✗ Python 3.11+ required (found ${PYTHON_VERSION})${NC}"
     exit 1
 fi
 echo ""

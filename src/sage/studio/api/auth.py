@@ -7,7 +7,7 @@ access.  A persistent "guest" user is always returned.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ class TokenResponse(BaseModel):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def build_auth_router() -> APIRouter:
