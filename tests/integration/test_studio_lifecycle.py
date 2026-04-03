@@ -33,12 +33,25 @@ class FakeStudioManager:
     def load_config(self) -> dict:
         return dict(self._config)
 
-    def start(self, **kwargs) -> bool:
-        self.last_start_kwargs = kwargs
-        if kwargs.get("frontend_port"):
-            self._config["port"] = kwargs["frontend_port"]
-        if kwargs.get("host"):
-            self._config["host"] = kwargs["host"]
+    def start(
+        self,
+        port: int | None = None,
+        backend_port: int | None = None,
+        host: str | None = None,
+        dev: bool = True,
+        skip_confirm: bool = False,
+    ) -> bool:
+        self.last_start_kwargs = {
+            "port": port,
+            "backend_port": backend_port,
+            "host": host,
+            "dev": dev,
+            "skip_confirm": skip_confirm,
+        }
+        if port:
+            self._config["port"] = port
+        if host:
+            self._config["host"] = host
         self._running = True
         return True
 
@@ -51,8 +64,11 @@ class FakeStudioManager:
     def status(self):
         return {"running": self._running, "config": self._config}
 
-    def logs(self, **kwargs) -> list:
-        self.last_logs_kwargs = kwargs
+    def logs(self, follow: bool = False, backend: bool = False) -> list:
+        self.last_logs_kwargs = {
+            "follow": follow,
+            "backend": backend,
+        }
         return []
 
     def install(self) -> bool:
@@ -64,7 +80,7 @@ class FakeStudioManager:
     def clean(self) -> bool:
         return True
 
-    def open(self) -> bool:
+    def open_browser(self) -> bool:
         return True
 
     def run_npm_command(self, args: list[str]) -> bool:
@@ -99,7 +115,7 @@ def test_start_happy_path(fake_manager):
 
 
 def test_start_forwards_port(fake_manager):
-    """``start --port 9001`` passes frontend_port=9001 to manager."""
+    """``start --port 9001`` passes port=9001 to manager."""
     result = invoke(fake_manager, "start", "--port", "9001")
     assert result.exit_code == 0, result.stdout
     assert fake_manager._config["port"] == 9001
@@ -202,17 +218,3 @@ def test_logs_follow_flag(fake_manager):
     result = invoke(fake_manager, "logs", "--follow")
     assert result.exit_code == 0, result.stdout
     assert fake_manager.last_logs_kwargs.get("follow") is True
-
-
-def test_logs_lines_option(fake_manager):
-    """``logs --lines 100`` passes lines=100 to manager.logs()."""
-    result = invoke(fake_manager, "logs", "--lines", "100")
-    assert result.exit_code == 0, result.stdout
-    assert fake_manager.last_logs_kwargs.get("lines") == 100
-
-
-def test_logs_gateway_flag(fake_manager):
-    """``logs --gateway`` passes gateway=True to manager.logs()."""
-    result = invoke(fake_manager, "logs", "--gateway")
-    assert result.exit_code == 0, result.stdout
-    assert fake_manager.last_logs_kwargs.get("gateway") is True

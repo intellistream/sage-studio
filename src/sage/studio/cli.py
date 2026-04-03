@@ -33,7 +33,7 @@ def _get_studio_manager():
 
 @app.command()
 def start(
-    frontend_port: int | None = typer.Option(
+    port: int | None = typer.Option(
         None, "--port", "-p", help="Frontend port (default: 5173 dev, 8889 prod)"
     ),
     backend_port: int | None = typer.Option(
@@ -46,7 +46,7 @@ def start(
     """Start SAGE Studio (frontend + backend)."""
     manager = _get_studio_manager()
     manager.start(
-        port=frontend_port,
+        port=port,
         backend_port=backend_port,
         host=host,
         dev=dev,
@@ -80,7 +80,7 @@ def status():
 
 @app.command()
 def restart(
-    frontend_port: int | None = typer.Option(None, "--port", "-p", help="Frontend port"),
+    port: int | None = typer.Option(None, "--port", "-p", help="Frontend port"),
     dev: bool = typer.Option(True, "--dev/--prod", help="Development or production mode"),
     skip_confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
 ):
@@ -89,7 +89,7 @@ def restart(
     console.print("🔄 Restarting Studio...")
     # 🔧 FIX: 重启时停止 LLM 服务（避免端口冲突），但保留 Gateway（共享服务）
     manager.stop(stop_gateway=False, stop_llm=True)
-    manager.start(port=frontend_port, dev=dev, skip_confirm=skip_confirm)
+    manager.start(port=port, dev=dev, skip_confirm=skip_confirm)
 
 
 @app.command()

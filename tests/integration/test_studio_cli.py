@@ -38,7 +38,7 @@ class FakeStudioManager:
 
     def start(
         self,
-        frontend_port=None,
+        port=None,
         backend_port=None,
         gateway_port=None,
         host=None,
@@ -52,8 +52,8 @@ class FakeStudioManager:
         skip_confirm=False,
         no_embedding=False,
     ):
-        if frontend_port:
-            self._config["port"] = frontend_port
+        if port:
+            self._config["port"] = port
         if host:
             self._config["host"] = host
         self._running = True
@@ -76,7 +76,7 @@ class FakeStudioManager:
     def build(self):
         return True
 
-    def open(self):
+    def open_browser(self):
         return True
 
     def clean(self):
