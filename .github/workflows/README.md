@@ -23,6 +23,12 @@ Studio 的持续集成和持续部署工作流。
 #### Job: test
 运行快速单元测试和集成测试（不需要 LLM 引擎）
 
+安装依赖使用：
+
+```bash
+pip install -e ".[dev,full]"
+```
+
 ```bash
 # 单元测试
 pytest tests/unit/ -v -m "not slow"

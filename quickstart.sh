@@ -2,14 +2,14 @@
 # quickstart.sh — sage-studio dev environment setup
 #
 # Usage:
-#   ./quickstart.sh               # dev mode (default): hooks + .[dev]  (includes [full])
+#   ./quickstart.sh               # dev mode (default): hooks + .[dev,full]
 #   ./quickstart.sh --full        # optional backends only: .[full]
 #   ./quickstart.sh --standard    # core deps only: no extras
 #   ./quickstart.sh --yes         # non-interactive (assume yes)
 #   ./quickstart.sh --doctor      # diagnose environment issues
 #
 # Install matrix:
-#   (default / --dev)  pip install -e .[dev]   ← includes [full] via self-ref
+#   (default / --dev)  pip install -e .[dev,full]
 #   --full             pip install -e .[full]
 #   --standard         pip install -e .
 #
@@ -29,7 +29,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Arguments ────────────────────────────────────────────────────────────────
-EXTRAS="[dev]"   # default — dev includes [full] via pyproject self-reference
+EXTRAS="[dev,full]"   # default — install both dev and full extras
 DOCTOR=false
 YES=false
 for arg in "$@"; do
@@ -37,7 +37,7 @@ for arg in "$@"; do
         --doctor)   DOCTOR=true ;;
         --standard) EXTRAS="" ;;
         --full)     EXTRAS="[full]" ;;
-        --dev)      EXTRAS="[dev]" ;;
+        --dev)      EXTRAS="[dev,full]" ;;
         --yes|-y)   YES=true ;;
     esac
 done

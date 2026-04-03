@@ -98,7 +98,7 @@ pip install isage  # 自动包含 isage-studio
 
 # 方式 2: 开发模式安装
 cd sage-studio
-pip install -e ".[dev]"
+pip install -e ".[dev,full]"
 
 # 安装前端依赖
 cd src/sage/studio/frontend
