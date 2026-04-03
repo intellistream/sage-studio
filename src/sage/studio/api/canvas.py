@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -144,8 +144,8 @@ def build_canvas_router() -> APIRouter:
                 "metadata": req.metadata,
                 "params_schema": {},
                 "dataset_requirements": {},
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
             compiled_payload=compiled_payload,
         )
@@ -184,7 +184,7 @@ def build_canvas_router() -> APIRouter:
 
         export_data = {
             "version": "1.0.0",
-            "exportTime": str(datetime.now(timezone.utc)),
+            "exportTime": str(datetime.now(UTC)),
             "flowId": flow_id,
             "flow": flow_data,
         }

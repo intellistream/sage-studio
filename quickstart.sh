@@ -2,14 +2,14 @@
 # quickstart.sh — sage-studio dev environment setup
 #
 # Usage:
-#   ./quickstart.sh               # dev mode (default): hooks + .[dev]  (includes [full])
+#   ./quickstart.sh               # dev mode (default): hooks + .[dev,full]
 #   ./quickstart.sh --full        # optional backends only: .[full]
 #   ./quickstart.sh --standard    # core deps only: no extras
 #   ./quickstart.sh --yes         # non-interactive (assume yes)
 #   ./quickstart.sh --doctor      # diagnose environment issues
 #
 # Install matrix:
-#   (default / --dev)  pip install -e .[dev]   ← includes [full] via self-ref
+#   (default / --dev)  pip install -e .[dev,full]
 #   --full             pip install -e .[full]
 #   --standard         pip install -e .
 #
@@ -29,7 +29,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Arguments ────────────────────────────────────────────────────────────────
-EXTRAS="[dev]"   # default — dev includes [full] via pyproject self-reference
+EXTRAS="[dev,full]"   # default — install both dev and full extras
 DOCTOR=false
 YES=false
 for arg in "$@"; do
@@ -37,7 +37,7 @@ for arg in "$@"; do
         --doctor)   DOCTOR=true ;;
         --standard) EXTRAS="" ;;
         --full)     EXTRAS="[full]" ;;
-        --dev)      EXTRAS="[dev]" ;;
+        --dev)      EXTRAS="[dev,full]" ;;
         --yes|-y)   YES=true ;;
     esac
 done
@@ -83,10 +83,19 @@ fi
 echo -e "${YELLOW}${BOLD}Step 1/3: Checking Python environment${NC}"
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "unknown")
 echo -e "  Python version: ${CYAN}${PYTHON_VERSION}${NC}"
-if python3 -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
-    echo -e "  ${GREEN}✓ Python ≥ 3.10${NC}"
+# DEPRECATED: Python 3.10 support
+# if python3 -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
+#     echo -e "  ${GREEN}✓ Python ≥ 3.10${NC}"
+# else
+#     echo -e "  ${RED}✗ Python 3.10+ required (found ${PYTHON_VERSION})${NC}"
+#     exit 1
+# fi
+
+# ACTIVE: Python 3.11+ required
+if python3 -c "import sys; exit(0 if sys.version_info >= (3,11) else 1)" 2>/dev/null; then
+    echo -e "  ${GREEN}✓ Python ≥ 3.11${NC}"
 else
-    echo -e "  ${RED}✗ Python 3.10+ required (found ${PYTHON_VERSION})${NC}"
+    echo -e "  ${RED}✗ Python 3.11+ required (found ${PYTHON_VERSION})${NC}"
     exit 1
 fi
 echo ""

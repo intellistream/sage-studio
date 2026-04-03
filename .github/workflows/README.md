@@ -14,13 +14,20 @@ Studio 的持续集成和持续部署工作流。
 - 手动触发 (workflow_dispatch)
 
 **测试矩阵**:
-- Python 3.10, 3.11
+<!-- - Python 3.10, 3.11 -->
+- Python 3.11
 - 单元测试 + 集成测试
 
 **测试步骤**:
 
 #### Job: test
 运行快速单元测试和集成测试（不需要 LLM 引擎）
+
+安装依赖使用：
+
+```bash
+pip install -e ".[dev,full]"
+```
 
 ```bash
 # 单元测试

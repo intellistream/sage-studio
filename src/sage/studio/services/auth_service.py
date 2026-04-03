@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -82,7 +82,7 @@ class AuthService:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT INTO users (username, hashed_password, created_at, is_guest) VALUES (?, ?, ?, 0)",
-                    (username, hashed_password, datetime.now(timezone.utc)),
+                    (username, hashed_password, datetime.now(UTC)),
                 )
                 user_id = cursor.lastrowid
                 conn.commit()
@@ -107,7 +107,7 @@ class AuthService:
             cursor = conn.cursor()
             cursor.execute(
                 "INSERT INTO users (username, hashed_password, created_at, is_guest) VALUES (?, ?, ?, 1)",
-                (username, hashed_password, datetime.now(timezone.utc)),
+                (username, hashed_password, datetime.now(UTC)),
             )
             user_id = cursor.lastrowid
             conn.commit()
@@ -145,9 +145,9 @@ class AuthService:
     def create_access_token(self, data: dict, expires_delta: timedelta | None = None) -> str:
         to_encode = data.copy()
         if expires_delta:
-            expire = datetime.now(timezone.utc) + expires_delta
+            expire = datetime.now(UTC) + expires_delta
         else:
-            expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+            expire = datetime.now(UTC) + timedelta(minutes=15)
         to_encode.update({"exp": expire})
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
         return encoded_jwt

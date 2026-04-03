@@ -28,7 +28,8 @@ Source: `https://pypi.org/pypi/isage-studio/json` (checked on 2026-02-14, UTC).
 
 ### Added
 - CI/CD workflow for automated testing (`.github/workflows/ci-test.yml`)
-  - Unit tests on Python 3.10 and 3.11
+  <!-- - Unit tests on Python 3.10 and 3.11 -->
+  - Unit tests on Python 3.11
   - Integration tests with CPU backend
   - E2E tests for LLM integration
   - Code quality checks (Ruff, Mypy)

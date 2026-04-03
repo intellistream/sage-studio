@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,13 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field
 CONTRACT_SCHEMA_VERSION = "v1"
 
 
-class RunKind(str, Enum):
+class RunKind(StrEnum):
     CHAT = "chat"
     EXPERIMENT = "experiment"
     SWARM = "swarm"
 
 
-class StageEventState(str, Enum):
+class StageEventState(StrEnum):
     CREATED = "created"
     QUEUED = "queued"
     RUNNING = "running"
@@ -24,7 +24,7 @@ class StageEventState(str, Enum):
     CANCELLED = "cancelled"
 
 
-class ArtifactKind(str, Enum):
+class ArtifactKind(StrEnum):
     INPUT = "input"
     OUTPUT = "output"
     LOG = "log"
@@ -39,7 +39,7 @@ class RunRef(BaseModel):
     request_id: str
     workspace_id: str
     kind: RunKind
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class StageEvent(BaseModel):
@@ -50,7 +50,7 @@ class StageEvent(BaseModel):
     request_id: str
     stage: str
     state: StageEventState
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     message: str | None = None
     metrics: dict[str, Any] | None = None
 

@@ -14,7 +14,7 @@ cd sage-studio
 
 2. **Install dependencies**:
 ```bash
-pip install -e .
+pip install -e ".[dev,full]"
 ```
 
 3. **Install SAGE core dependencies** (if needed):
