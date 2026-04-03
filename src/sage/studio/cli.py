@@ -9,6 +9,8 @@ Studio provides a modern web UI for:
 
 from __future__ import annotations
 
+import argparse
+
 import typer
 from rich.console import Console
 
@@ -31,7 +33,7 @@ def _get_studio_manager():
 
 @app.command()
 def start(
-    frontend_port: int | None = typer.Option(
+    port: int | None = typer.Option(
         None, "--port", "-p", help="Frontend port (default: 5173 dev, 8889 prod)"
     ),
     backend_port: int | None = typer.Option(
@@ -44,7 +46,7 @@ def start(
     """Start SAGE Studio (frontend + backend)."""
     manager = _get_studio_manager()
     manager.start(
-        frontend_port=frontend_port,
+        port=port,
         backend_port=backend_port,
         host=host,
         dev=dev,
@@ -78,7 +80,7 @@ def status():
 
 @app.command()
 def restart(
-    frontend_port: int | None = typer.Option(None, "--port", "-p", help="Frontend port"),
+    port: int | None = typer.Option(None, "--port", "-p", help="Frontend port"),
     dev: bool = typer.Option(True, "--dev/--prod", help="Development or production mode"),
     skip_confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
 ):
@@ -87,26 +89,24 @@ def restart(
     console.print("🔄 Restarting Studio...")
     # 🔧 FIX: 重启时停止 LLM 服务（避免端口冲突），但保留 Gateway（共享服务）
     manager.stop(stop_gateway=False, stop_llm=True)
-    manager.start(frontend_port=frontend_port, dev=dev, skip_confirm=skip_confirm)
+    manager.start(port=port, dev=dev, skip_confirm=skip_confirm)
 
 
 @app.command()
 def logs(
     backend: bool = typer.Option(False, "--backend", help="Show backend logs"),
-    gateway: bool = typer.Option(False, "--gateway", help="Show gateway logs"),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
-    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
 ):
     """Show Studio logs."""
     manager = _get_studio_manager()
-    manager.logs(backend=backend, gateway=gateway, follow=follow, lines=lines)
+    manager.logs(backend=backend, follow=follow)
 
 
 @app.command()
 def open():
     """Open Studio in default browser."""
     manager = _get_studio_manager()
-    manager.open()
+    manager.open_browser()
 
 
 @app.command()
@@ -139,10 +139,46 @@ def npm(
     manager.run_npm_command(args)
 
 
+def _run_studio_argparse(args: argparse.Namespace) -> int:
+    """Dispatch argparse-captured studio args to the Typer app."""
+    studio_args = list(args.studio_args or [])
+    if studio_args and studio_args[0] == "--":
+        studio_args = studio_args[1:]
+
+    try:
+        app(args=studio_args, prog_name="sage studio", standalone_mode=False)
+    except typer.Exit as exc:
+        return int(exc.exit_code)
+
+    return 0
+
+
 # For SAGE CLI integration
-def register_studio_command(sage_app: typer.Typer) -> None:
+def register_studio_command(sage_cli: object) -> None:
     """Register studio commands to SAGE CLI app.
 
-    This function is called by SAGE CLI to dynamically add studio commands.
+    Supports both:
+    - Typer root app (``add_typer``)
+    - argparse subparsers action (``add_parser``)
     """
-    sage_app.add_typer(app, name="studio")
+    if hasattr(sage_cli, "add_typer"):
+        sage_cli.add_typer(app, name="studio")
+        return
+
+    if hasattr(sage_cli, "add_parser"):
+        parser = sage_cli.add_parser(
+            "studio",
+            help="Studio visual workflow builder",
+            add_help=False,
+        )
+        parser.add_argument(
+            "studio_args",
+            nargs=argparse.REMAINDER,
+            help="Arguments passed through to 'sage studio'",
+        )
+        parser.set_defaults(_handler=_run_studio_argparse)
+        return
+
+    raise TypeError(
+        "Unsupported SAGE CLI object for studio registration; expected Typer app or argparse subparsers"
+    )
